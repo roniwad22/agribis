@@ -1,1 +1,4 @@
 node_modules
+agribis.db
+.env
+*.migrated

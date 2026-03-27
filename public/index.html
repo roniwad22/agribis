@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agri-Bridge</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#2e7d32">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #f0f4f0; color: #222; min-height: 100vh; }
+
+    .screen { display: none; flex-direction: column; min-height: 100vh; }
+    .screen.active { display: flex; }
+
+    header {
+      background: #2e7d32; color: white; padding: 16px 20px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 20px; }
+    header .back { cursor: pointer; font-size: 22px; background: none; border: none; color: white; }
+
+    .content { padding: 20px; flex: 1; }
+
+    .card {
+      background: white; border-radius: 10px; padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px;
+    }
+
+    .menu-btn {
+      display: flex; align-items: center; gap: 14px;
+      background: white; border: none; border-radius: 10px;
+      padding: 18px 20px; width: 100%; text-align: left;
+      font-size: 16px; cursor: pointer; margin-bottom: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      transition: background 0.15s;
+    }
+    .menu-btn:active { background: #e8f5e9; }
+    .menu-btn .icon { font-size: 28px; width: 36px; }
+    .menu-btn .label { font-weight: bold; }
+    .menu-btn .sub { font-size: 13px; color: #666; }
+
+    input, select {
+      width: 100%; padding: 12px; border: 1px solid #ccc;
+      border-radius: 8px; font-size: 16px; margin-top: 6px; margin-bottom: 14px;
+    }
+    label { font-size: 14px; color: #555; font-weight: bold; }
+
+    .btn {
+      width: 100%; padding: 14px; background: #2e7d32; color: white;
+      border: none; border-radius: 8px; font-size: 16px; font-weight: bold;
+      cursor: pointer; margin-top: 4px;
+    }
+    .btn:active { background: #1b5e20; }
+    .btn.secondary { background: #f57c00; }
+    .btn.secondary:active { background: #e65100; }
+
+    .alert { padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; font-size: 14px; }
+    .alert.success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+    .alert.error { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
+    .alert.info { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+
+    .listing {
+      border-left: 4px solid #2e7d32; padding: 10px 14px;
+      background: #f9f9f9; border-radius: 0 8px 8px 0; margin-bottom: 10px;
+    }
+    .listing .detail { font-weight: bold; font-size: 15px; }
+    .listing .location { font-size: 13px; color: #666; margin-top: 4px; }
+
+    .filter-btn {
+      flex: 1; padding: 10px 8px; border: 1px solid #ccc; border-radius: 8px;
+      background: white; font-size: 13px; font-weight: bold; cursor: pointer; color: #555;
+    }
+    .filter-btn.active { background: #2e7d32; color: white; border-color: #2e7d32; }
+
+    .status-badge {
+      display: inline-block; padding: 3px 10px; border-radius: 12px;
+      font-size: 11px; font-weight: bold; text-transform: uppercase;
+    }
+    .status-badge.pending { background: #fff3e0; color: #e65100; }
+    .status-badge.approved { background: #e8f5e9; color: #2e7d32; }
+    .status-badge.rejected { background: #ffebee; color: #c62828; }
+
+    .action-row { display: flex; gap: 8px; margin-top: 12px; }
+    .action-btn {
+      flex: 1; padding: 10px; border: none; border-radius: 8px;
+      font-size: 14px; font-weight: bold; cursor: pointer; color: white;
+    }
+    .action-btn.approve { background: #2e7d32; }
+    .action-btn.reject { background: #c62828; }
+    .action-btn.upload { background: #f57c00; }
+
+    .price-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 0; border-bottom: 1px solid #eee;
+    }
+    .price-row:last-child { border-bottom: none; }
+    .price-row .crop { font-weight: bold; font-size: 16px; }
+    .price-row .amount { color: #2e7d32; font-weight: bold; font-size: 16px; }
+
+    .phone-badge {
+      background: #e8f5e9; color: #2e7d32; font-size: 13px;
+      padding: 4px 10px; border-radius: 20px; margin-left: auto;
+    }
+
+    .spinner { text-align: center; padding: 30px; color: #888; }
+    .empty { text-align: center; padding: 30px; color: #999; font-size: 15px; }
+  </style>
+</head>
+<body>
+
+<!-- SCREEN: Phone Entry -->
+<div id="screen-phone" class="screen active">
+  <header><h1>🌾 Agri-Bridge</h1></header>
+  <div class="content">
+    <div class="card" style="margin-top:40px;">
+      <h2 style="margin-bottom:6px;">Welcome</h2>
+      <p style="color:#666; font-size:14px; margin-bottom:20px;">Enter your phone number to get started</p>
+      <label>Phone Number</label>
+      <input type="tel" id="phone-input" placeholder="+256 700 000000">
+      <div id="phone-error" class="alert error" style="display:none;"></div>
+      <button class="btn" onclick="submitPhone()">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: Main Menu -->
+<div id="screen-menu" class="screen">
+  <header>
+    <h1>🌾 Agri-Bridge</h1>
+    <span class="phone-badge" id="menu-phone"></span>
+  </header>
+  <div class="content">
+    <button class="menu-btn" onclick="goTo('farmer')">
+      <span class="icon">👨‍🌾</span>
+      <div><div class="label">I am a Farmer</div><div class="sub">List your village produce</div></div>
+    </button>
+    <button class="menu-btn" onclick="goTo('broker')">
+      <span class="icon">🏪</span>
+      <div><div class="label">I am a Broker</div><div class="sub">List city wholesale stock</div></div>
+    </button>
+    <button class="menu-btn" onclick="goTo('buyer')">
+      <span class="icon">🛒</span>
+      <div><div class="label">I am a Buyer</div><div class="sub">Browse market listings</div></div>
+    </button>
+    <button class="menu-btn" onclick="goTo('prices')">
+      <span class="icon">📈</span>
+      <div><div class="label">Market Prices</div><div class="sub">Today's prices in UGX</div></div>
+    </button>
+    <button class="menu-btn" onclick="goTo('agent')">
+      <span class="icon">🎥</span>
+      <div><div class="label">Field Agent</div><div class="sub">Upload produce videos</div></div>
+    </button>
+    <p style="text-align:center; margin-top:20px;">
+      <a href="#" onclick="changePhone()" style="color:#888; font-size:13px;">Change phone number</a>
+    </p>
+  </div>
+</div>
+
+<!-- SCREEN: Farmer -->
+<div id="screen-farmer" class="screen">
+  <header>
+    <button class="back" onclick="goTo('menu')">&#8592;</button>
+    <h1>Farmer Portal</h1>
+  </header>
+  <div class="content" id="farmer-content">
+    <div class="spinner">Loading...</div>
+  </div>
+</div>
+
+<!-- SCREEN: Broker -->
+<div id="screen-broker" class="screen">
+  <header>
+    <button class="back" onclick="goTo('menu')">&#8592;</button>
+    <h1>Broker Portal</h1>
+  </header>
+  <div class="content">
+    <div class="card">
+      <h3 style="margin-bottom:16px;">List City Wholesale Stock</h3>
+      <div id="broker-alert" style="display:none;"></div>
+      <label>Crop & Quantity</label>
+      <input type="text" id="broker-detail" placeholder="e.g. Matooke 500 bunches">
+      <button class="btn secondary" onclick="submitBroker()">Submit Listing</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: Buyer -->
+<div id="screen-buyer" class="screen">
+  <header>
+    <button class="back" onclick="goTo('menu')">&#8592;</button>
+    <h1>Market Board</h1>
+  </header>
+  <div class="content">
+    <div style="display:flex;gap:0;margin-bottom:16px;">
+      <button class="filter-btn active" id="buyer-tab-login" onclick="buyerTab('login')" style="flex:1;border-radius:8px 0 0 8px;">Login</button>
+      <button class="filter-btn" id="buyer-tab-register" onclick="buyerTab('register')" style="flex:1;border-radius:0 8px 8px 0;">Register</button>
+    </div>
+    <div id="buyer-login-form" class="card">
+      <label>Select Market</label>
+      <select id="buyer-type" style="margin-bottom:14px;">
+        <option value="VILLAGE">Farm Gate (Village)</option>
+        <option value="CITY">City Markets (Wholesale)</option>
+      </select>
+      <label>Phone Number</label>
+      <input type="tel" id="buyer-phone" placeholder="+256 7XX XXX XXX">
+      <label>Your PIN</label>
+      <input type="password" id="buyer-pin" placeholder="4-digit PIN" maxlength="4">
+      <button class="btn" onclick="loadListings()">View Listings</button>
+    </div>
+    <div id="buyer-register-form" class="card" style="display:none;">
+      <label>Phone Number</label>
+      <input type="tel" id="buyer-reg-phone" placeholder="+256 7XX XXX XXX">
+      <label>Your Name</label>
+      <input type="text" id="buyer-reg-name" placeholder="e.g. Nakato Jane">
+      <label>Create PIN (4 digits)</label>
+      <input type="password" id="buyer-reg-pin" placeholder="4-digit PIN" maxlength="4">
+      <label>Confirm PIN</label>
+      <input type="password" id="buyer-reg-confirm" placeholder="Re-enter PIN" maxlength="4">
+      <div id="buyer-reg-alert" class="alert" style="display:none;"></div>
+      <button class="btn secondary" onclick="buyerRegister()">Register</button>
+    </div>
+    <div id="buyer-results"></div>
+  </div>
+</div>
+
+<!-- SCREEN: Agent -->
+<div id="screen-agent" class="screen">
+  <header>
+    <button class="back" onclick="goTo('menu')">&#8592;</button>
+    <h1>Field Agent</h1>
+  </header>
+  <div class="content">
+    <div style="display:flex;gap:0;margin-bottom:16px;">
+      <button class="filter-btn active" id="agent-tab-login" onclick="agentTab('login')" style="flex:1;border-radius:8px 0 0 8px;">Login</button>
+      <button class="filter-btn" id="agent-tab-register" onclick="agentTab('register')" style="flex:1;border-radius:0 8px 8px 0;">Register</button>
+    </div>
+    <div id="agent-login" class="card">
+      <label>Your Phone Number</label>
+      <input type="tel" id="agent-phone-input" placeholder="+256 7XX XXX XXX">
+      <label>Your PIN</label>
+      <input type="password" id="agent-pin-input" placeholder="4-digit PIN" maxlength="4">
+      <div id="agent-login-error" class="alert error" style="display:none;"></div>
+      <button class="btn secondary" onclick="agentLogin()">Login</button>
+    </div>
+    <div id="agent-register" class="card" style="display:none;">
+      <label>Phone Number</label>
+      <input type="tel" id="agent-reg-phone" placeholder="+256 7XX XXX XXX">
+      <label>Full Name</label>
+      <input type="text" id="agent-reg-name" placeholder="e.g. Okello James">
+      <label>District</label>
+      <input type="text" id="agent-reg-district" placeholder="e.g. Mityana">
+      <label>Create PIN (4 digits)</label>
+      <input type="password" id="agent-reg-pin" placeholder="4-digit PIN" maxlength="4">
+      <label>Confirm PIN</label>
+      <input type="password" id="agent-reg-confirm" placeholder="Re-enter PIN" maxlength="4">
+      <div id="agent-reg-alert" class="alert" style="display:none;"></div>
+      <button class="btn secondary" onclick="agentRegister()">Register</button>
+    </div>
+    <div id="agent-listings" style="display:none;">
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button class="filter-btn active" onclick="filterAgent('pending')" id="filter-pending">Pending</button>
+        <button class="filter-btn" onclick="filterAgent('all')" id="filter-all">All</button>
+        <button class="filter-btn" onclick="filterAgent('approved')" id="filter-approved">Approved</button>
+      </div>
+      <div id="agent-list-content"><div class="spinner">Loading...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: Agent Detail -->
+<div id="screen-agent-detail" class="screen">
+  <header>
+    <button class="back" onclick="showScreen('agent'); renderFilteredAgent();">&#8592;</button>
+    <h1>Listing Details</h1>
+  </header>
+  <div class="content" id="agent-detail-content"></div>
+</div>
+
+<!-- SCREEN: Prices -->
+<div id="screen-prices" class="screen">
+  <header>
+    <button class="back" onclick="goTo('menu')">&#8592;</button>
+    <h1>Today's Prices (UGX)</h1>
+  </header>
+  <div class="content">
+    <input type="search" id="price-search" placeholder="Search crop..." oninput="filterPrices(this.value)"
+      style="width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #ddd;border-radius:8px;font-size:15px;margin-bottom:12px;outline:none;">
+    <div class="card" id="prices-content">
+      <div class="spinner">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = '';
+  let myPhone = localStorage.getItem('agribridge_phone') || '';
+
+  // ── Navigation ──────────────────────────────────────────
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + id).classList.add('active');
+    window.scrollTo(0, 0);
+  }
+
+  function goTo(screen) {
+    if (screen === 'menu') { showScreen('menu'); return; }
+    if (screen === 'farmer') { showScreen('farmer'); loadFarmer(); return; }
+    if (screen === 'prices') { showScreen('prices'); loadPrices(); return; }
+    if (screen === 'agent') { showScreen('agent'); return; }
+    showScreen(screen);
+  }
+
+  function changePhone() {
+    localStorage.removeItem('agribridge_phone');
+    myPhone = '';
+    showScreen('phone');
+  }
+
+  // ── Boot ─────────────────────────────────────────────────
+  window.onload = () => {
+    if (myPhone) {
+      document.getElementById('menu-phone').textContent = myPhone;
+      showScreen('menu');
+    }
+  };
+
+  // ── Phone entry ──────────────────────────────────────────
+  function submitPhone() {
+    const val = document.getElementById('phone-input').value.trim();
+    const err = document.getElementById('phone-error');
+    if (!val || val.length < 9) {
+      err.textContent = 'Please enter a valid phone number.';
+      err.style.display = 'block';
+      return;
+    }
+    err.style.display = 'none';
+    myPhone = val;
+    localStorage.setItem('agribridge_phone', myPhone);
+    document.getElementById('menu-phone').textContent = myPhone;
+    showScreen('menu');
+  }
+
+  // ── Farmer ───────────────────────────────────────────────
+  async function loadFarmer() {
+    const el = document.getElementById('farmer-content');
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    try {
+      const phone = encodeURIComponent(myPhone);
+      const res = await fetch(`${API}/api/profiles/${phone}`);
+      if (res.status === 404) {
+        el.innerHTML = renderRegisterForm();
+      } else {
+        const profile = await res.json();
+        el.innerHTML = renderListForm(profile);
+      }
+    } catch (e) {
+      el.innerHTML = '<div class="alert error">Connection error. Is the server running?</div>';
+    }
+  }
+
+  function renderRegisterForm() {
+    return `
+      <div class="alert info">You are not registered yet. Please fill in your details.</div>
+      <div class="card">
+        <h3 style="margin-bottom:16px;">Register as Farmer</h3>
+        <label>Full Name</label>
+        <input type="text" id="reg-name" placeholder="e.g. John Kato">
+        <label>Parish</label>
+        <input type="text" id="reg-parish" placeholder="e.g. Kibibi">
+        <label>District</label>
+        <input type="text" id="reg-district" placeholder="e.g. Mityana">
+        <div id="reg-alert" style="display:none;"></div>
+        <button class="btn" onclick="submitRegister()">Register</button>
+      </div>`;
+  }
+
+  function renderListForm(profile) {
+    return `
+      <div class="alert success">Welcome back, ${escHtml(profile.name)}! (${escHtml(profile.parish)})</div>
+      <div class="card">
+        <h3 style="margin-bottom:16px;">List Your Produce</h3>
+        <label>Crop & Quantity</label>
+        <input type="text" id="list-detail" placeholder="e.g. Maize 50kg">
+        <p style="font-size:12px; color:#888; margin-top:-10px; margin-bottom:14px;">
+          Your listing goes live immediately. Large quantities may be visited by a field agent for verification.
+        </p>
+        <div id="list-alert" style="display:none;"></div>
+        <button class="btn" onclick="submitListing()">Submit Listing</button>
+      </div>`;
+  }
+
+  async function submitRegister() {
+    const name = document.getElementById('reg-name').value.trim();
+    const parish = document.getElementById('reg-parish').value.trim();
+    const district = document.getElementById('reg-district').value.trim();
+    const alertEl = document.getElementById('reg-alert');
+    if (!name || !parish || !district) {
+      showAlert(alertEl, 'error', 'All fields are required.');
+      return;
+    }
+    try {
+      await fetch(`${API}/api/profiles`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: myPhone, name, parish, district })
+      });
+      loadFarmer();
+    } catch (e) {
+      showAlert(alertEl, 'error', 'Registration failed. Try again.');
+    }
+  }
+
+  async function submitListing() {
+    const detail = document.getElementById('list-detail').value.trim();
+    const alertEl = document.getElementById('list-alert');
+    if (!detail) { showAlert(alertEl, 'error', 'Please enter crop and quantity.'); return; }
+    try {
+      const res = await fetch(`${API}/api/listings/farmer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: myPhone, detail })
+      });
+      const data = await res.json();
+      if (data.status === '[APPROVED]') {
+        showAlert(alertEl, 'success', 'Listed! Auto-approved — it is live now.');
+      } else {
+        showAlert(alertEl, 'info', 'Listed! Large quantity — pending review. We will contact you.');
+      }
+      document.getElementById('list-detail').value = '';
+    } catch (e) {
+      showAlert(alertEl, 'error', 'Submission failed. Try again.');
+    }
+  }
+
+  // ── Broker ───────────────────────────────────────────────
+  async function submitBroker() {
+    const detail = document.getElementById('broker-detail').value.trim();
+    const alertEl = document.getElementById('broker-alert');
+    if (!detail) { showAlert(alertEl, 'error', 'Please enter crop and quantity.'); return; }
+    try {
+      await fetch(`${API}/api/listings/broker`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: myPhone, detail })
+      });
+      showAlert(alertEl, 'success', 'City wholesale stock listed and live!');
+      document.getElementById('broker-detail').value = '';
+    } catch (e) {
+      showAlert(alertEl, 'error', 'Submission failed. Try again.');
+    }
+  }
+
+  // ── Buyer Tab Toggle ─────────────────────────────────────
+  function buyerTab(tab) {
+    document.getElementById('buyer-tab-login').classList.toggle('active', tab === 'login');
+    document.getElementById('buyer-tab-register').classList.toggle('active', tab === 'register');
+    document.getElementById('buyer-login-form').style.display = tab === 'login' ? '' : 'none';
+    document.getElementById('buyer-register-form').style.display = tab === 'register' ? '' : 'none';
+  }
+
+  async function buyerRegister() {
+    const phone = document.getElementById('buyer-reg-phone').value.trim();
+    const name = document.getElementById('buyer-reg-name').value.trim();
+    const pin = document.getElementById('buyer-reg-pin').value.trim();
+    const confirm = document.getElementById('buyer-reg-confirm').value.trim();
+    const alertEl = document.getElementById('buyer-reg-alert');
+    if (!phone || !name || !pin) { showAlert(alertEl, 'error', 'All fields required.'); return; }
+    if (!/^\d{4}$/.test(pin)) { showAlert(alertEl, 'error', 'PIN must be 4 digits.'); return; }
+    if (pin !== confirm) { showAlert(alertEl, 'error', 'PINs do not match.'); return; }
+    try {
+      const res = await fetch(`${API}/api/buyers/register`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, name, pin })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert(alertEl, 'success', 'Registered! Switch to Login tab.');
+        document.getElementById('buyer-phone').value = phone;
+      } else {
+        showAlert(alertEl, 'error', data.error || 'Registration failed.');
+      }
+    } catch (e) { showAlert(alertEl, 'error', 'Connection error.'); }
+  }
+
+  // ── Buyer ────────────────────────────────────────────────
+  async function loadListings() {
+    const type = document.getElementById('buyer-type').value;
+    const phone = document.getElementById('buyer-phone').value.trim();
+    const pin = document.getElementById('buyer-pin').value.trim();
+    const resultsEl = document.getElementById('buyer-results');
+    if (!phone || !pin) { resultsEl.innerHTML = '<div class="alert error">Enter your phone and PIN.</div>'; return; }
+    resultsEl.innerHTML = '<div class="spinner">Loading...</div>';
+    try {
+      const res = await fetch(`${API}/api/listings/active?type=${type}&phone=${encodeURIComponent(phone)}&pin=${encodeURIComponent(pin)}`);
+      if (res.status === 403) {
+        resultsEl.innerHTML = '<div class="alert error">Invalid credentials. Register first if new.</div>';
+        return;
+      }
+      const listings = await res.json();
+      if (!listings.length) {
+        resultsEl.innerHTML = '<div class="empty">No active listings right now.</div>';
+        return;
+      }
+      // Fetch verification + reputation for each listing
+      const extras = await Promise.all(listings.map(async l => {
+        const [vr, rr] = await Promise.all([
+          fetch(`${API}/api/listings/${l.id}/verification`).then(r => r.json()).catch(() => ({ verified: false })),
+          fetch(`${API}/api/reputation/${encodeURIComponent(l.phone)}`).then(r => r.json()).catch(() => ({ tier: 'NEW', sales: 0, avg: 0, label: '[NEW SELLER]' }))
+        ]);
+        return { v: vr, rep: rr };
+      }));
+
+      resultsEl.innerHTML = listings.map((l, i) => {
+        const { v, rep } = extras[i];
+        const tierColor = rep.tier === 'TRUSTED' ? '#2e7d32' : rep.tier === 'ACTIVE' ? '#1565c0' : '#f57c00';
+        const tierBg = rep.tier === 'TRUSTED' ? '#e8f5e9' : rep.tier === 'ACTIVE' ? '#e3f2fd' : '#fff3e0';
+        const trustHeader = `<div style="background:${tierBg};border:1px solid ${tierColor}33;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:13px;color:${tierColor};">
+          <strong>${escHtml(rep.label)}</strong>
+          ${rep.sales > 0 ? ' · ' + rep.avg + '/5 from ' + rep.sales + ' buyer(s)' : ' · No reviews yet'}
+        </div>`;
+        const verifyBadge = v && v.verified
+          ? `<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:8px 12px;margin-top:6px;font-size:12px;">
+              ✅ Agent Verified — Grade <strong>${escHtml(v.grade)}</strong>
+              ${v.geo ? ' · 📍 GPS' : ''}
+            </div>`
+          : '';
+        return `
+        <div class="listing">
+          <div class="detail">${escHtml(l.detail)}</div>
+          <div class="location">📍 ${escHtml(l.location)}</div>
+          ${trustHeader}
+          ${verifyBadge}
+          ${l.video ? `<video src="/uploads/${escHtml(l.video)}" controls style="width:100%;margin-top:10px;border-radius:6px;"></video>` : ''}
+        </div>`;
+      }).join('');
+    } catch (e) {
+      resultsEl.innerHTML = '<div class="alert error">Failed to load listings.</div>';
+    }
+  }
+
+  // ── Prices ───────────────────────────────────────────────
+  async function loadPrices() {
+    const el = document.getElementById('prices-content');
+    try {
+      const res = await fetch(`${API}/api/prices`);
+      const prices = await res.json();
+      el.innerHTML = prices.map(p => `
+        <div class="price-row" data-crop="${escHtml(p.crop.toLowerCase())}">
+          <span class="crop">${escHtml(p.crop)}<br><span style="font-size:12px;color:#888;font-weight:normal;">${escHtml(p.unit)}</span></span>
+          <span class="amount">UGX ${Number(p.price).toLocaleString()}</span>
+        </div>`).join('');
+      document.getElementById('price-search').value = '';
+      filterPrices('');
+    } catch (e) {
+      el.innerHTML = '<div class="alert error">Failed to load prices.</div>';
+    }
+  }
+
+  function filterPrices(q) {
+    const term = q.toLowerCase();
+    document.querySelectorAll('#prices-content [data-crop]').forEach(row => {
+      row.style.display = row.dataset.crop.includes(term) ? '' : 'none';
+    });
+  }
+
+  // ── Agent Tab Toggle ─────────────────────────────────────
+  function agentTab(tab) {
+    document.getElementById('agent-tab-login').classList.toggle('active', tab === 'login');
+    document.getElementById('agent-tab-register').classList.toggle('active', tab === 'register');
+    document.getElementById('agent-login').style.display = tab === 'login' ? '' : 'none';
+    document.getElementById('agent-register').style.display = tab === 'register' ? '' : 'none';
+  }
+
+  async function agentRegister() {
+    const phone = document.getElementById('agent-reg-phone').value.trim();
+    const name = document.getElementById('agent-reg-name').value.trim();
+    const district = document.getElementById('agent-reg-district').value.trim();
+    const pin = document.getElementById('agent-reg-pin').value.trim();
+    const confirm = document.getElementById('agent-reg-confirm').value.trim();
+    const alertEl = document.getElementById('agent-reg-alert');
+    if (!phone || !name || !pin) { showAlert(alertEl, 'error', 'Phone, name, and PIN required.'); return; }
+    if (!/^\d{4}$/.test(pin)) { showAlert(alertEl, 'error', 'PIN must be 4 digits.'); return; }
+    if (pin !== confirm) { showAlert(alertEl, 'error', 'PINs do not match.'); return; }
+    try {
+      const res = await fetch(`${API}/api/agents/register`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, name, pin, district })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert(alertEl, 'success', 'Registered! Pending admin approval. Switch to Login once approved.');
+        document.getElementById('agent-phone-input').value = phone;
+      } else {
+        showAlert(alertEl, 'error', data.error || 'Registration failed.');
+      }
+    } catch (e) { showAlert(alertEl, 'error', 'Connection error.'); }
+  }
+
+  // ── Agent ────────────────────────────────────────────────
+  let agentPin = '';
+  let agentPhone = '';
+  let agentListingsData = [];
+  let agentFilter = 'pending';
+
+  async function agentLogin() {
+    const pin = document.getElementById('agent-pin-input').value.trim();
+    const phone = document.getElementById('agent-phone-input').value.trim();
+    const err = document.getElementById('agent-login-error');
+    if (!phone || !pin) { showAlert(err, 'error', 'Enter phone and PIN.'); return; }
+    try {
+      // First authenticate
+      const loginRes = await fetch(`${API}/api/agents/login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, pin })
+      });
+      if (loginRes.status === 403) {
+        const data = await loginRes.json();
+        showAlert(err, 'error', data.error || 'Invalid credentials.');
+        return;
+      }
+      agentPin = pin;
+      agentPhone = phone;
+      // Then fetch listings
+      const res = await fetch(`${API}/api/agent/listings?phone=${encodeURIComponent(phone)}&pin=${encodeURIComponent(pin)}`);
+      err.style.display = 'none';
+      document.getElementById('agent-login').style.display = 'none';
+      document.getElementById('agent-register').style.display = 'none';
+      document.querySelector('#screen-agent .content > div:first-child').style.display = 'none';
+      document.getElementById('agent-listings').style.display = 'block';
+      agentListingsData = await res.json();
+      renderFilteredAgent();
+    } catch (e) {
+      showAlert(err, 'error', 'Connection error.');
+    }
+  }
+
+  async function refreshAgentListings() {
+    try {
+      const res = await fetch(`${API}/api/agent/listings?phone=${encodeURIComponent(agentPhone)}&pin=${encodeURIComponent(agentPin)}`);
+      if (res.ok) agentListingsData = await res.json();
+    } catch (_) {}
+  }
+
+  function filterAgent(f) {
+    agentFilter = f;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('filter-' + f).classList.add('active');
+    renderFilteredAgent();
+  }
+
+  function renderFilteredAgent() {
+    const filtered = agentFilter === 'all' ? agentListingsData
+      : agentListingsData.filter(l => {
+          if (agentFilter === 'pending') return l.status === '[PENDING]';
+          if (agentFilter === 'approved') return l.status === '[APPROVED]';
+          return true;
+        });
+    const el = document.getElementById('agent-list-content');
+    const pendingCount = agentListingsData.filter(l => l.status === '[PENDING]').length;
+    document.getElementById('filter-pending').textContent = `Pending (${pendingCount})`;
+
+    if (!filtered.length) {
+      el.innerHTML = '<div class="card" style="text-align:center;color:#888;">No listings in this category.</div>';
+      return;
+    }
+    el.innerHTML = filtered.map(l => {
+      const sc = l.status === '[PENDING]' ? 'pending' : l.status === '[APPROVED]' ? 'approved' : 'rejected';
+      const isOwn = l._is_own;
+      return `
+      <div class="listing" onclick="${isOwn ? '' : "openAgentDetail('" + escHtml(l.id) + "')"}" style="cursor:${isOwn ? 'default' : 'pointer'}; border-left-color:${isOwn ? '#999' : sc === 'pending' ? '#f57c00' : sc === 'approved' ? '#2e7d32' : '#c62828'};">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div class="detail">${escHtml(l.detail)}</div>
+          ${isOwn ? '<span class="status-badge" style="background:#eee;color:#999;">YOUR LISTING</span>' : `<span class="status-badge ${sc}">${sc}</span>`}
+        </div>
+        <div class="location">
+          📍 ${escHtml(l.location)} &nbsp;·&nbsp; ${escHtml(l.type)}
+          ${l.video ? ' &nbsp;·&nbsp; <span style="color:#2e7d32;">✅ Verified</span>' : ''}
+        </div>
+        <div style="font-size:12px;color:#999;margin-top:2px;">📅 ${escHtml(l.time)} &nbsp;·&nbsp; 📞 ${escHtml(l.phone)}</div>
+        ${isOwn ? '<div style="font-size:11px;color:#c62828;margin-top:4px;">⚠ Cannot verify own listings</div>' : ''}
+      </div>`;
+    }).join('');
+  }
+
+  async function openAgentDetail(id) {
+    const l = agentListingsData.find(x => x.id === id);
+    if (!l) return;
+    const sc = l.status === '[PENDING]' ? 'pending' : l.status === '[APPROVED]' ? 'approved' : 'rejected';
+    const el = document.getElementById('agent-detail-content');
+
+    // Check if already verified
+    let vData = null;
+    try {
+      const vRes = await fetch(`${API}/api/listings/${id}/verification`);
+      vData = await vRes.json();
+    } catch (_) {}
+
+    const verifiedBlock = (vData && vData.verified) ? `
+      <div class="card" style="border-left:4px solid #2e7d32;">
+        <h3 style="color:#2e7d32;margin-bottom:10px;">✅ Verification Report</h3>
+        <div style="font-size:14px;line-height:1.8;">
+          <strong>Grade:</strong> <span style="font-size:18px;font-weight:bold;">${escHtml(vData.grade)}</span><br>
+          <strong>Verified:</strong> ${escHtml(new Date(vData.verified_at).toLocaleString())}<br>
+          <strong>GPS:</strong> ${vData.geo ? vData.geo.lat.toFixed(4) + ', ' + vData.geo.lng.toFixed(4) : 'Not captured'}<br>
+          <strong>Farmer Area:</strong> ${escHtml(vData.farmer_parish || 'Unknown')}<br>
+          ${vData.notes ? '<strong>Notes:</strong> ' + escHtml(vData.notes) + '<br>' : ''}
+          <strong>Checklist:</strong><br>
+          ${Object.entries(vData.checklist).map(([k,v]) =>
+            '&nbsp;&nbsp;' + (v ? '✅' : '❌') + ' ' + escHtml(k)
+          ).join('<br>')}
+        </div>
+      </div>` : '';
+
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <h3>${escHtml(l.detail)}</h3>
+          <span class="status-badge ${sc}">${sc}</span>
+        </div>
+        <div style="font-size:14px;color:#555;line-height:1.8;">
+          📍 <strong>Location:</strong> ${escHtml(l.location)}<br>
+          📦 <strong>Type:</strong> ${escHtml(l.type)}<br>
+          📞 <strong>Phone:</strong> <a href="tel:${escHtml(l.phone)}">${escHtml(l.phone)}</a><br>
+          📅 <strong>Listed:</strong> ${escHtml(l.time)}<br>
+          🎥 <strong>Evidence:</strong> ${l.video ? '<span style="color:#2e7d32;">Uploaded</span>' : '<span style="color:#f57c00;">Not yet</span>'}
+        </div>
+      </div>
+      ${verifiedBlock}
+      ${l.status === '[PENDING]' ? `
+      <div class="card">
+        <h3 style="margin-bottom:12px;">Verification Checklist</h3>
+        <p style="font-size:13px;color:#666;margin-bottom:14px;">Confirm each item before approving:</p>
+        <div style="font-size:14px;line-height:2.2;" id="verify-checks">
+          <label><input type="checkbox" class="vcheck" value="Produce physically seen"> Produce physically seen at farm</label><br>
+          <label><input type="checkbox" class="vcheck" value="Quantity matches claim"> Quantity matches listing claim</label><br>
+          <label><input type="checkbox" class="vcheck" value="Quality is acceptable"> Quality is acceptable (no rot/damage)</label><br>
+          <label><input type="checkbox" class="vcheck" value="Farmer identity confirmed"> Farmer identity confirmed</label><br>
+          <label><input type="checkbox" class="vcheck" value="Ready for collection"> Produce is ready for collection</label>
+        </div>
+        <label style="margin-top:14px;display:block;">Quality Grade</label>
+        <select id="verify-grade" style="margin-bottom:10px;">
+          <option value="">-- Select --</option>
+          <option value="A">Grade A — Premium quality</option>
+          <option value="B">Grade B — Good quality</option>
+          <option value="C">Grade C — Fair quality</option>
+        </select>
+        <label>Notes (optional)</label>
+        <input type="text" id="verify-notes" placeholder="Any observations...">
+        <div id="verify-geo" style="font-size:12px;color:#888;margin-bottom:10px;">📍 Capturing GPS...</div>
+        <div id="verify-error" style="display:none;"></div>
+        <div class="action-row">
+          <button class="action-btn approve" onclick="submitVerification('${escHtml(l.id)}', '[APPROVED]')">✅ Approve</button>
+          <button class="action-btn reject" onclick="submitVerification('${escHtml(l.id)}', '[REJECTED]')">❌ Reject</button>
+        </div>
+      </div>` : ''}
+      <div class="card">
+        <h3 style="margin-bottom:12px;">Upload Evidence</h3>
+        <label>Photo or Video</label>
+        <input type="file" id="agent-media-file" accept="video/*,image/*" capture="environment" style="margin-top:6px;margin-bottom:14px;">
+        <div id="agent-upload-status" style="display:none;"></div>
+        <button class="action-btn upload" onclick="agentUploadMedia('${escHtml(l.id)}')">📤 Upload</button>
+      </div>`;
+    showScreen('agent-detail');
+    captureGeo();
+  }
+
+  let agentGeo = null;
+  function captureGeo() {
+    agentGeo = null;
+    const el = document.getElementById('verify-geo');
+    if (!el) return;
+    if (!navigator.geolocation) { el.textContent = '📍 GPS not available on this device'; return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { agentGeo = { lat: pos.coords.latitude, lng: pos.coords.longitude }; el.textContent = '📍 GPS: ' + agentGeo.lat.toFixed(4) + ', ' + agentGeo.lng.toFixed(4); },
+      () => { el.textContent = '📍 GPS denied — location won\'t be recorded'; }
+    );
+  }
+
+  async function submitVerification(id, status) {
+    const errEl = document.getElementById('verify-error');
+    const checks = document.querySelectorAll('.vcheck');
+    const grade = document.getElementById('verify-grade').value;
+    const notes = document.getElementById('verify-notes').value.trim();
+    const checklist = {};
+    checks.forEach(c => { checklist[c.value] = c.checked; });
+
+    const anyChecked = Object.values(checklist).some(v => v);
+    if (status === '[APPROVED]' && !grade) {
+      showAlert(errEl, 'error', 'Select a quality grade before approving.'); errEl.style.display='block'; return;
+    }
+    if (status === '[APPROVED]' && !anyChecked) {
+      showAlert(errEl, 'error', 'Complete at least one checklist item.'); errEl.style.display='block'; return;
+    }
+
+    try {
+      // Save verification data (API blocks self-verification)
+      const vRes = await fetch(`${API}/api/listings/${id}/verify?phone=${encodeURIComponent(agentPhone)}&pin=${encodeURIComponent(agentPin)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grade: grade || 'N/A', checklist, notes, lat: agentGeo?.lat, lng: agentGeo?.lng })
+      });
+      if (vRes.status === 403) {
+        const err2 = await vRes.json();
+        showAlert(errEl, 'error', err2.error || 'Cannot verify this listing.'); errEl.style.display='block'; return;
+      }
+      // Update status
+      await fetch(`${API}/api/listings/${id}/status`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      const l = agentListingsData.find(x => x.id === id);
+      if (l) l.status = status;
+      openAgentDetail(id);
+    } catch (e) {
+      showAlert(errEl, 'error', 'Failed to submit. Try again.'); errEl.style.display='block';
+    }
+  }
+
+  async function agentAction(id, status) {
+    try {
+      const res = await fetch(`${API}/api/listings/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, pin: agentPin })
+      });
+      if (res.ok) {
+        const l = agentListingsData.find(x => x.id === id);
+        if (l) l.status = status;
+        openAgentDetail(id);
+      }
+    } catch (_) {}
+  }
+
+  async function agentUploadMedia(id) {
+    const file = document.getElementById('agent-media-file').files[0];
+    const statusEl = document.getElementById('agent-upload-status');
+    if (!file) { showAlert(statusEl, 'error', 'Select a file first.'); statusEl.style.display='block'; return; }
+    showAlert(statusEl, 'info', 'Uploading...'); statusEl.style.display='block';
+    const form = new FormData();
+    form.append('video', file);
+    try {
+      const res = await fetch(`${API}/api/listings/${id}/video?phone=${encodeURIComponent(agentPhone)}&pin=${encodeURIComponent(agentPin)}`, {
+        method: 'POST', body: form
+      });
+      const data = await res.json();
+      if (data.success) {
+        showAlert(statusEl, 'success', 'Uploaded!');
+        const l = agentListingsData.find(x => x.id === id);
+        if (l) l.video = data.filename;
+        setTimeout(() => openAgentDetail(id), 800);
+      } else {
+        showAlert(statusEl, 'error', data.error || 'Failed.');
+      }
+    } catch (e) {
+      showAlert(statusEl, 'error', 'Upload failed.');
+    }
+  }
+
+  // ── Helpers ──────────────────────────────────────────────
+  function showAlert(el, type, msg) {
+    el.className = `alert ${type}`;
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>

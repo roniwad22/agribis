@@ -1,0 +1,12 @@
+{
+  "name": "Agri-Bridge",
+  "short_name": "AgriBridge",
+  "description": "Agricultural marketplace for Uganda",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0f4f0",
+  "theme_color": "#2e7d32",
+  "icons": [
+    { "src": "/icon.png", "sizes": "192x192", "type": "image/png" }
+  ]
+}
