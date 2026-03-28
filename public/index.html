@@ -230,6 +230,10 @@
       <p style="font-size:13px;color:#888;margin-top:12px;">Already a registered farmer? Just use your farmer phone + PIN to log in above — no separate buyer registration needed.</p>
     </div>
     <div id="buyer-results"></div>
+    <div id="buyer-detail" style="display:none;">
+      <button class="btn secondary" onclick="closeBuyerDetail()" style="margin-bottom:12px;">← Back to Listings</button>
+      <div id="buyer-detail-content"></div>
+    </div>
   </div>
 </div>
 
@@ -577,6 +581,7 @@
   }
 
   // ── Buyer ────────────────────────────────────────────────
+  let buyerListingsCache = [];
   async function loadListings() {
     const type = document.getElementById('buyer-type').value;
     const phone = document.getElementById('buyer-phone').value.trim();
@@ -606,6 +611,7 @@
         return { v: vr, rep: rr };
       }));
 
+      buyerListingsCache = listings.map((l, i) => ({ ...l, _v: extras[i].v, _rep: extras[i].rep }));
       resultsEl.innerHTML = listings.map((l, i) => {
         const { v, rep } = extras[i];
         const tierColor = rep.tier === 'TRUSTED' ? '#2e7d32' : rep.tier === 'ACTIVE' ? '#1565c0' : '#f57c00';
@@ -621,7 +627,7 @@
             </div>`
           : '';
         return `
-        <div class="listing">
+        <div class="listing" onclick="openBuyerDetail('${escHtml(l.id)}')" style="cursor:pointer;">
           <div class="detail">${escHtml(l.detail)}</div>
           <div class="location">📍 ${escHtml(l.location)}</div>
           ${trustHeader}
@@ -631,6 +637,109 @@
       }).join('');
     } catch (e) {
       resultsEl.innerHTML = '<div class="alert error">Failed to load listings.</div>';
+    }
+  }
+
+  // ── Buyer Detail & Reviews ──────────────────────────────
+  function closeBuyerDetail() {
+    document.getElementById('buyer-detail').style.display = 'none';
+    document.getElementById('buyer-results').style.display = '';
+  }
+
+  async function openBuyerDetail(id) {
+    const l = buyerListingsCache.find(x => x.id === id);
+    if (!l) return;
+    const v = l._v;
+    const rep = l._rep;
+    const el = document.getElementById('buyer-detail-content');
+
+    const tierColor = rep.tier === 'TRUSTED' ? '#2e7d32' : rep.tier === 'ACTIVE' ? '#1565c0' : '#f57c00';
+    const tierBg = rep.tier === 'TRUSTED' ? '#e8f5e9' : rep.tier === 'ACTIVE' ? '#e3f2fd' : '#fff3e0';
+
+    const verificationReport = (v && v.verified) ? `
+      <div class="card" style="border-left:4px solid #2e7d32;">
+        <h3 style="color:#2e7d32;margin-bottom:10px;">Agent Verification Report</h3>
+        <div style="font-size:14px;line-height:1.8;">
+          <strong>Grade:</strong> <span style="font-size:18px;font-weight:bold;">${escHtml(v.grade)}</span><br>
+          <strong>Verified:</strong> ${escHtml(new Date(v.verified_at).toLocaleString())}<br>
+          <strong>GPS:</strong> ${v.geo ? v.geo.lat.toFixed(4) + ', ' + v.geo.lng.toFixed(4) : 'Not captured'}<br>
+          <strong>Farmer Area:</strong> ${escHtml(v.farmer_parish || 'Unknown')}<br>
+          ${v.notes ? '<strong>Notes:</strong> ' + escHtml(v.notes) + '<br>' : ''}
+          <strong>Checklist:</strong><br>
+          ${Object.entries(v.checklist).map(([k, val]) =>
+            '&nbsp;&nbsp;' + (val ? '&#9989;' : '&#10060;') + ' ' + escHtml(k)
+          ).join('<br>')}
+        </div>
+      </div>` : `
+      <div class="card" style="border-left:4px solid #f57c00;">
+        <p style="color:#f57c00;font-size:14px;">This listing has not been verified by a field agent yet.</p>
+      </div>`;
+
+    el.innerHTML = `
+      <div class="card">
+        <h3 style="margin-bottom:10px;">${escHtml(l.detail)}</h3>
+        <div style="font-size:14px;color:#555;line-height:1.8;">
+          &#128205; <strong>Location:</strong> ${escHtml(l.location)}<br>
+          &#128230; <strong>Type:</strong> ${escHtml(l.type)}<br>
+          &#128222; <strong>Farmer:</strong> <a href="tel:${escHtml(l.phone)}">${escHtml(l.phone)}</a><br>
+          &#128197; <strong>Listed:</strong> ${escHtml(l.time)}
+        </div>
+        <div style="background:${tierBg};border:1px solid ${tierColor}33;border-radius:8px;padding:8px 12px;margin-top:10px;font-size:13px;color:${tierColor};">
+          <strong>${escHtml(rep.label)}</strong>
+          ${rep.sales > 0 ? ' &middot; ' + rep.avg + '/5 from ' + rep.sales + ' review(s)' : ' &middot; No reviews yet'}
+        </div>
+      </div>
+      ${verificationReport}
+      ${l.video ? `<div class="card"><h3 style="margin-bottom:10px;">Evidence</h3><video src="/uploads/${escHtml(l.video)}" controls style="width:100%;border-radius:6px;"></video></div>` : ''}
+      <div class="card">
+        <h3 style="margin-bottom:12px;">Leave a Review</h3>
+        <label>Rating</label>
+        <div id="review-stars" style="font-size:28px;cursor:pointer;margin-bottom:10px;">
+          ${[1,2,3,4,5].map(n => `<span onclick="setReviewRating(${n})" data-star="${n}" style="color:#ccc;">&#9733;</span>`).join('')}
+        </div>
+        <input type="hidden" id="review-rating" value="0">
+        <label>Comment (optional)</label>
+        <input type="text" id="review-comment" placeholder="e.g. Good quality produce">
+        <div id="review-alert" class="alert" style="display:none;"></div>
+        <button class="btn" onclick="submitReview('${escHtml(l.id)}', '${escHtml(l.phone)}')" style="margin-top:8px;">Submit Review</button>
+      </div>`;
+
+    document.getElementById('buyer-results').style.display = 'none';
+    document.getElementById('buyer-detail').style.display = '';
+  }
+
+  function setReviewRating(n) {
+    document.getElementById('review-rating').value = n;
+    document.querySelectorAll('#review-stars span').forEach(s => {
+      s.style.color = parseInt(s.dataset.star) <= n ? '#f5a623' : '#ccc';
+    });
+  }
+
+  async function submitReview(listingId, farmerPhone) {
+    const rating = parseInt(document.getElementById('review-rating').value);
+    const comment = document.getElementById('review-comment').value.trim();
+    const alertEl = document.getElementById('review-alert');
+    if (!rating || rating < 1) { showAlert(alertEl, 'error', 'Please select a star rating.'); return; }
+    const buyerPhone = document.getElementById('buyer-phone').value.trim();
+    const buyerPin = document.getElementById('buyer-pin').value.trim();
+    try {
+      const res = await fetch(`${API}/api/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-phone': buyerPhone,
+          'x-pin': buyerPin
+        },
+        body: JSON.stringify({ listing_id: listingId, farmer_phone: farmerPhone, rating, comment })
+      });
+      const data = await res.json();
+      if (!res.ok) { showAlert(alertEl, 'error', data.error || 'Failed to submit.'); return; }
+      showAlert(alertEl, 'success', 'Review submitted! Rating: ' + rating + '/5');
+      // Disable submit button
+      document.querySelector('#buyer-detail .btn:last-child').disabled = true;
+      document.querySelector('#buyer-detail .btn:last-child').textContent = 'Review Submitted';
+    } catch (e) {
+      showAlert(alertEl, 'error', 'Connection error.');
     }
   }
 
