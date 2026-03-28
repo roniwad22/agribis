@@ -752,7 +752,8 @@
       document.getElementById('agent-register').style.display = 'none';
       document.querySelector('#screen-agent .content > div:first-child').style.display = 'none';
       document.getElementById('agent-listings').style.display = 'block';
-      agentListingsData = await res.json();
+      const listingsData = await res.json();
+      agentListingsData = Array.isArray(listingsData) ? listingsData : [];
       renderFilteredAgent();
     } catch (e) {
       showAlert(err, 'error', 'Connection error.');

@@ -134,6 +134,13 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     router.post('/agents/login', authLimit, (req, res) => {
         const { phone, pin } = req.body;
         if (!phone || !pin) return res.status(400).json({ error: 'phone and pin required' });
+        // In sandbox mode, auto-activate pending agents on login
+        if (isSandbox) {
+            const agent = getAgent(phone);
+            if (agent && agent.status === 'pending') {
+                setAgentStatus(phone, 'active');
+            }
+        }
         const result = authenticateAgent(phone, pin);
         if (result.error) return res.status(403).json({ error: result.error });
         res.json({ success: true, agent: { phone: result.agent.phone, name: result.agent.name, district: result.agent.district, status: result.agent.status } });
