@@ -53,7 +53,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         getListing, getAllListings, getApprovedListings,
         updateListingStatus, setListingVideo, setVerification, getVerification,
         addFeedback, getFarmerReputation, getFarmerTrustLabel,
-        getAgentRecord, isAgentSuspended,
+        getAgentRecord, isAgentSuspended, addCommission, getAgentCommissions,
         getPrices, setPrices,
         registerAgent, authenticateAgent, getAgent, setAgentStatus, getAllAgents,
         registerBuyer, authenticateBuyer,
@@ -353,7 +353,8 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
             farmer_parish: profile?.parish || null,
             verified_at: new Date().toISOString()
         });
-        res.json({ success: true });
+        addCommission(agentPhone, req.params.id, 5000);
+        res.json({ success: true, commission_earned: 5000 });
     });
 
     // GET /api/listings/:id/verification
@@ -371,6 +372,14 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         const auth = authenticateAgent(phone, pin);
         if (auth.error) return res.status(403).json({ error: auth.error });
         res.json(getAgentRecord(auth.agent.phone));
+    });
+
+    // GET /api/agent/commissions  (credentials via x-phone/x-pin headers)
+    router.get('/agent/commissions', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const auth = authenticateAgent(phone, pin);
+        if (auth.error) return res.status(403).json({ error: auth.error });
+        res.json(getAgentCommissions(auth.agent.phone));
     });
 
     // POST /api/listings/:id/video  (credentials via x-phone/x-pin headers or query params)

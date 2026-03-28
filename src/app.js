@@ -133,6 +133,14 @@ function createDb(dbPath) {
         expires_at INTEGER NOT NULL,
         attempts INTEGER DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS commissions (
+        id TEXT PRIMARY KEY,
+        agent_phone TEXT NOT NULL,
+        listing_id TEXT NOT NULL,
+        amount INTEGER NOT NULL DEFAULT 5000,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT NOT NULL
+      );
     `);
     return db;
 }
@@ -256,7 +264,23 @@ function createHelpers(db) {
             const strikes = db.prepare('SELECT * FROM agent_strikes WHERE agent_phone = ? ORDER BY rowid DESC').all(agentPhone);
             const verifications = db.prepare("SELECT COUNT(*) as c FROM listings WHERE verification LIKE ?").get(`%${agentPhone}%`);
             const suspended = strikes.length >= 3;
-            return { phone: agentPhone, strikes: strikes.length, verifications: verifications.c, suspended, details: strikes.slice(0, 5) };
+            const commissionRows = db.prepare('SELECT SUM(amount) as total, COUNT(*) as count FROM commissions WHERE agent_phone = ?').get(agentPhone);
+            return {
+                phone: agentPhone,
+                strikes: strikes.length,
+                verifications: verifications.c,
+                suspended,
+                details: strikes.slice(0, 5),
+                commissions_count: commissionRows.count || 0,
+                commissions_total: commissionRows.total || 0
+            };
+        },
+        addCommission(agentPhone, listingId, amount) {
+            db.prepare('INSERT INTO commissions (id,agent_phone,listing_id,amount,status,created_at) VALUES (?,?,?,?,?,?)')
+              .run(crypto.randomUUID(), agentPhone, listingId, amount || 5000, 'pending', new Date().toISOString());
+        },
+        getAgentCommissions(agentPhone) {
+            return db.prepare('SELECT * FROM commissions WHERE agent_phone = ? ORDER BY rowid DESC LIMIT 50').all(agentPhone);
         },
         isAgentSuspended(agentPhone) {
             const agent = db.prepare('SELECT status FROM agents WHERE phone = ?').get(agentPhone);

@@ -6,7 +6,12 @@
   "scripts": {
     "start": "node ./src/app.js",
     "build": "echo \"No build step defined\"",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "ussd": "node scripts/ussd-sim.js",
+    "ussd:farmer": "node scripts/ussd-sim.js --demo farmer",
+    "ussd:buyer": "node scripts/ussd-sim.js --demo buyer",
+    "ussd:prices": "node scripts/ussd-sim.js --demo prices",
+    "ussd:full": "node scripts/ussd-sim.js --demo full"
   },
   "keywords": [],
   "author": "",

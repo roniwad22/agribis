@@ -3,7 +3,13 @@
     "allow": [
       "mcp__Claude_Preview__preview_start",
       "Bash(taskkill /F /PID 16552 /PID 13324)",
-      "Bash(netstat -ano)"
+      "Bash(netstat -ano)",
+      "Bash(node --test tests/*.test.js)",
+      "Bash(npm test:*)",
+      "Bash(timeout 5 node src/app.js)",
+      "Bash(where ngrok:*)",
+      "Bash(npm ls:*)",
+      "Bash(git add:*)"
     ]
   }
 }

@@ -492,7 +492,9 @@
     if (!phone || !pin) { resultsEl.innerHTML = '<div class="alert error">Enter your phone and PIN.</div>'; return; }
     resultsEl.innerHTML = '<div class="spinner">Loading...</div>';
     try {
-      const res = await fetch(`${API}/api/listings/active?type=${type}&phone=${encodeURIComponent(phone)}&pin=${encodeURIComponent(pin)}`);
+      const res = await fetch(`${API}/api/listings/active?type=${type}`, {
+        headers: { 'x-phone': phone, 'x-pin': pin }
+      });
       if (res.status === 403) {
         resultsEl.innerHTML = '<div class="alert error">Invalid credentials. Register first if new.</div>';
         return;
@@ -622,7 +624,9 @@
       agentPin = pin;
       agentPhone = phone;
       // Then fetch listings
-      const res = await fetch(`${API}/api/agent/listings?phone=${encodeURIComponent(phone)}&pin=${encodeURIComponent(pin)}`);
+      const res = await fetch(`${API}/api/agent/listings`, {
+        headers: { 'x-phone': phone, 'x-pin': pin }
+      });
       err.style.display = 'none';
       document.getElementById('agent-login').style.display = 'none';
       document.getElementById('agent-register').style.display = 'none';
@@ -637,7 +641,9 @@
 
   async function refreshAgentListings() {
     try {
-      const res = await fetch(`${API}/api/agent/listings?phone=${encodeURIComponent(agentPhone)}&pin=${encodeURIComponent(agentPin)}`);
+      const res = await fetch(`${API}/api/agent/listings`, {
+        headers: { 'x-phone': agentPhone, 'x-pin': agentPin }
+      });
       if (res.ok) agentListingsData = await res.json();
     } catch (_) {}
   }
@@ -795,8 +801,9 @@
 
     try {
       // Save verification data (API blocks self-verification)
-      const vRes = await fetch(`${API}/api/listings/${id}/verify?phone=${encodeURIComponent(agentPhone)}&pin=${encodeURIComponent(agentPin)}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const vRes = await fetch(`${API}/api/listings/${id}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-phone': agentPhone, 'x-pin': agentPin },
         body: JSON.stringify({ grade: grade || 'N/A', checklist, notes, lat: agentGeo?.lat, lng: agentGeo?.lng })
       });
       if (vRes.status === 403) {
@@ -839,8 +846,9 @@
     const form = new FormData();
     form.append('video', file);
     try {
-      const res = await fetch(`${API}/api/listings/${id}/video?phone=${encodeURIComponent(agentPhone)}&pin=${encodeURIComponent(agentPin)}`, {
-        method: 'POST', body: form
+      const res = await fetch(`${API}/api/listings/${id}/video`, {
+        method: 'POST', body: form,
+        headers: { 'x-phone': agentPhone, 'x-pin': agentPin }
       });
       const data = await res.json();
       if (data.success) {

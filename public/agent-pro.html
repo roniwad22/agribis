@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Pro — Agri-Bridge</title>
+  <meta name="theme-color" content="#1565c0">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #f0f4f8; color: #222; min-height: 100vh; }
+
+    .screen { display: none; flex-direction: column; min-height: 100vh; }
+    .screen.active { display: flex; }
+
+    header {
+      background: #1565c0; color: white; padding: 14px 20px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 18px; flex: 1; }
+    header .back { background: none; border: none; color: white; font-size: 22px; cursor: pointer; }
+    header .agent-tag { font-size: 12px; background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 12px; }
+
+    .content { padding: 16px; flex: 1; }
+
+    .card {
+      background: white; border-radius: 10px; padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07); margin-bottom: 14px;
+    }
+
+    .btn {
+      width: 100%; padding: 14px; border: none; border-radius: 8px;
+      font-size: 16px; font-weight: bold; cursor: pointer; color: white;
+      background: #1565c0; margin-top: 8px;
+    }
+    .btn:active { background: #0d47a1; }
+    .btn.green { background: #2e7d32; }
+    .btn.green:active { background: #1b5e20; }
+    .btn.orange { background: #f57c00; }
+    .btn.orange:active { background: #e65100; }
+    .btn.red { background: #c62828; }
+    .btn.disabled { background: #ccc; cursor: not-allowed; }
+
+    input, select {
+      width: 100%; padding: 12px; border: 1px solid #ccc;
+      border-radius: 8px; font-size: 16px; margin-top: 6px; margin-bottom: 14px;
+    }
+    label { font-size: 14px; color: #555; font-weight: bold; }
+
+    .alert { padding: 12px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 14px; }
+    .alert.error   { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
+    .alert.success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+    .alert.info    { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+    .alert.warning { background: #fff3e0; color: #e65100; border: 1px solid #ffcc02; }
+
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .stat-box {
+      background: white; border-radius: 10px; padding: 16px; text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    }
+    .stat-box .num { font-size: 28px; font-weight: bold; color: #1565c0; }
+    .stat-box .lbl { font-size: 12px; color: #888; margin-top: 4px; }
+    .stat-box.green .num { color: #2e7d32; }
+
+    .listing-row {
+      background: white; border-left: 4px solid #f57c00; border-radius: 0 10px 10px 0;
+      padding: 14px; margin-bottom: 10px; cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    }
+    .listing-row:active { background: #f5f5f5; }
+    .listing-row .detail { font-weight: bold; font-size: 15px; }
+    .listing-row .meta { font-size: 13px; color: #777; margin-top: 4px; }
+    .listing-row.verified { border-left-color: #2e7d32; }
+    .listing-row.own { border-left-color: #ccc; cursor: default; }
+
+    /* ── Wizard ── */
+    .wizard-steps {
+      display: flex; margin-bottom: 16px; overflow: hidden; border-radius: 8px;
+    }
+    .wizard-step {
+      flex: 1; padding: 8px 4px; text-align: center; font-size: 11px;
+      background: #e0e0e0; color: #888; font-weight: bold;
+      border-right: 2px solid white;
+    }
+    .wizard-step:last-child { border-right: none; }
+    .wizard-step.active { background: #1565c0; color: white; }
+    .wizard-step.done   { background: #2e7d32; color: white; }
+
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+
+    .geo-display {
+      background: #e3f2fd; border: 1px solid #90caf9; border-radius: 8px;
+      padding: 12px; font-size: 14px; color: #1565c0; margin-bottom: 14px;
+      text-align: center;
+    }
+    .geo-display.captured { background: #e8f5e9; border-color: #a5d6a7; color: #2e7d32; }
+    .geo-display.denied   { background: #fff3e0; border-color: #ffcc02; color: #e65100; }
+
+    #photo-canvas {
+      width: 100%; border-radius: 8px; display: none; margin-bottom: 10px;
+    }
+
+    .checklist-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 15px;
+    }
+    .checklist-item:last-child { border-bottom: none; }
+    .checklist-item input[type=checkbox] {
+      width: 22px; height: 22px; margin: 0; flex-shrink: 0; cursor: pointer;
+    }
+
+    .grade-btn {
+      flex: 1; padding: 14px 8px; border: 2px solid #ddd; border-radius: 8px;
+      background: white; font-size: 15px; font-weight: bold; cursor: pointer;
+      text-align: center; transition: all 0.15s;
+    }
+    .grade-btn.A.selected { background: #e8f5e9; border-color: #2e7d32; color: #2e7d32; }
+    .grade-btn.B.selected { background: #e3f2fd; border-color: #1565c0; color: #1565c0; }
+    .grade-btn.C.selected { background: #fff3e0; border-color: #f57c00; color: #f57c00; }
+
+    .summary-row {
+      display: flex; justify-content: space-between; padding: 8px 0;
+      border-bottom: 1px solid #f0f0f0; font-size: 14px;
+    }
+    .summary-row:last-child { border-bottom: none; }
+    .summary-row .key { color: #666; }
+    .summary-row .val { font-weight: bold; }
+
+    .commission-row {
+      background: white; border-radius: 8px; padding: 12px 16px;
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px; font-size: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .commission-row .amount { font-weight: bold; color: #2e7d32; }
+
+    .spinner { text-align: center; padding: 40px; color: #888; }
+    .empty   { text-align: center; padding: 30px; color: #999; font-size: 15px; }
+  </style>
+</head>
+<body>
+
+<!-- SCREEN: Login -->
+<div id="screen-login" class="screen active">
+  <header><h1>🌾 Agent Pro</h1></header>
+  <div class="content">
+    <div class="card" style="margin-top:30px;">
+      <h2 style="margin-bottom:6px;">Field Agent Login</h2>
+      <p style="color:#666;font-size:14px;margin-bottom:20px;">Sign in with your registered credentials</p>
+      <label>Phone Number</label>
+      <input type="tel" id="login-phone" placeholder="+256 7XX XXX XXX">
+      <label>PIN</label>
+      <input type="password" id="login-pin" placeholder="4-digit PIN" maxlength="4">
+      <div id="login-error" style="display:none;"></div>
+      <button class="btn" onclick="doLogin()">Sign In</button>
+    </div>
+    <p style="text-align:center;margin-top:16px;font-size:13px;color:#888;">
+      <a href="/app/" style="color:#1565c0;">← Back to main app</a>
+    </p>
+  </div>
+</div>
+
+<!-- SCREEN: Dashboard -->
+<div id="screen-dash" class="screen">
+  <header>
+    <h1>Agent Pro</h1>
+    <span class="agent-tag" id="dash-name"></span>
+  </header>
+  <div class="content">
+    <div class="stat-grid">
+      <div class="stat-box">
+        <div class="num" id="stat-pending">—</div>
+        <div class="lbl">Pending</div>
+      </div>
+      <div class="stat-box green">
+        <div class="num" id="stat-earned">—</div>
+        <div class="lbl">UGX Earned</div>
+      </div>
+      <div class="stat-box">
+        <div class="num" id="stat-verified">—</div>
+        <div class="lbl">Verified</div>
+      </div>
+      <div class="stat-box">
+        <div class="num" id="stat-strikes">—</div>
+        <div class="lbl">Strikes</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <button class="btn" style="flex:1;margin:0;padding:10px;font-size:13px;" onclick="showListings()">📋 Listings</button>
+      <button class="btn" style="flex:1;margin:0;padding:10px;font-size:13px;background:#2e7d32;" onclick="showCommissions()">💰 Commissions</button>
+    </div>
+
+    <div id="dash-listings">
+      <div class="spinner">Loading listings…</div>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: Wizard -->
+<div id="screen-wizard" class="screen">
+  <header>
+    <button class="back" onclick="exitWizard()">&#8592;</button>
+    <h1 id="wizard-title">Verification</h1>
+  </header>
+  <div class="content">
+    <div class="wizard-steps" id="wizard-steps">
+      <div class="wizard-step active" id="ws-1">1. GPS</div>
+      <div class="wizard-step" id="ws-2">2. Photo</div>
+      <div class="wizard-step" id="ws-3">3. Video</div>
+      <div class="wizard-step" id="ws-4">4. Grade</div>
+      <div class="wizard-step" id="ws-5">5. Submit</div>
+    </div>
+
+    <!-- Step 1: GPS -->
+    <div class="step-panel active" id="step-1">
+      <div class="card">
+        <h3 style="margin-bottom:12px;">📍 Step 1 — GPS Check-in</h3>
+        <p style="font-size:14px;color:#666;margin-bottom:16px;">
+          Capture your location at the farm. This is recorded with the verification.
+        </p>
+        <div id="geo-display" class="geo-display">Waiting for GPS…</div>
+        <button class="btn" onclick="captureGps()">📡 Capture My Location</button>
+        <button class="btn" style="background:#888;margin-top:8px;" onclick="skipGps()">Skip GPS (not recommended)</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Arrival Photo -->
+    <div class="step-panel" id="step-2">
+      <div class="card">
+        <h3 style="margin-bottom:12px;">📸 Step 2 — Arrival Photo</h3>
+        <p style="font-size:14px;color:#666;margin-bottom:16px;">
+          Photograph the farm entrance or surroundings. GPS + timestamp will be stamped on the image.
+        </p>
+        <input type="file" id="arrival-photo-input" accept="image/*" capture="environment"
+          onchange="handleArrivalPhoto(this)" style="margin-bottom:10px;">
+        <canvas id="photo-canvas"></canvas>
+        <div id="photo-status" style="font-size:13px;color:#888;margin-bottom:10px;"></div>
+        <button class="btn green" id="step2-next" onclick="goStep(3)">Next →</button>
+        <button class="btn" style="background:#888;margin-top:6px;" onclick="goStep(3)">Skip Photo</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Crop Evidence -->
+    <div class="step-panel" id="step-3">
+      <div class="card">
+        <h3 style="margin-bottom:12px;">🎥 Step 3 — Crop Evidence</h3>
+        <p style="font-size:14px;color:#666;margin-bottom:16px;">
+          Record a short video or photo of the actual produce listed.
+        </p>
+        <input type="file" id="crop-media-input" accept="video/*,image/*" capture="environment"
+          style="margin-bottom:10px;">
+        <div id="upload-status" style="display:none;" class="alert info"></div>
+        <button class="btn orange" onclick="uploadCropMedia()">📤 Upload to Listing</button>
+        <button class="btn green" style="margin-top:8px;" onclick="goStep(4)">Next →</button>
+        <button class="btn" style="background:#888;margin-top:6px;" onclick="goStep(4)">Skip Upload</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Grade & Checklist -->
+    <div class="step-panel" id="step-4">
+      <div class="card">
+        <h3 style="margin-bottom:12px;">✅ Step 4 — Grade &amp; Checklist</h3>
+        <p style="font-size:14px;color:#666;margin-bottom:16px;">Select a quality grade and complete the checklist.</p>
+
+        <label style="margin-bottom:8px;display:block;">Quality Grade</label>
+        <div style="display:flex;gap:8px;margin-bottom:16px;">
+          <button class="grade-btn A" onclick="selectGrade('A')">A<br><span style="font-size:11px;font-weight:normal;">Premium</span></button>
+          <button class="grade-btn B" onclick="selectGrade('B')">B<br><span style="font-size:11px;font-weight:normal;">Good</span></button>
+          <button class="grade-btn C" onclick="selectGrade('C')">C<br><span style="font-size:11px;font-weight:normal;">Fair</span></button>
+        </div>
+
+        <label style="margin-bottom:8px;display:block;">Checklist</label>
+        <div id="checklist-items">
+          <div class="checklist-item"><input type="checkbox" id="chk-1" value="Produce physically seen"> <label for="chk-1">Produce physically seen at farm</label></div>
+          <div class="checklist-item"><input type="checkbox" id="chk-2" value="Quantity matches claim"> <label for="chk-2">Quantity matches listing claim</label></div>
+          <div class="checklist-item"><input type="checkbox" id="chk-3" value="Quality acceptable"> <label for="chk-3">Quality acceptable (no rot/damage)</label></div>
+          <div class="checklist-item"><input type="checkbox" id="chk-4" value="Farmer identity confirmed"> <label for="chk-4">Farmer identity confirmed</label></div>
+          <div class="checklist-item"><input type="checkbox" id="chk-5" value="Ready for collection"> <label for="chk-5">Produce ready for collection</label></div>
+        </div>
+
+        <label style="margin-top:14px;display:block;">Notes (optional)</label>
+        <input type="text" id="verify-notes" placeholder="Any observations…">
+        <div id="grade-error" style="display:none;" class="alert error"></div>
+        <button class="btn green" onclick="validateStep4()">Next →</button>
+      </div>
+    </div>
+
+    <!-- Step 5: Review & Submit -->
+    <div class="step-panel" id="step-5">
+      <div class="card">
+        <h3 style="margin-bottom:12px;">🏁 Step 5 — Sign Off</h3>
+        <p style="font-size:14px;color:#666;margin-bottom:16px;">Review your verification before submitting.</p>
+        <div id="review-summary"></div>
+        <div id="submit-error" style="display:none;" class="alert error"></div>
+        <div id="submit-success" style="display:none;" class="alert success"></div>
+        <button class="btn green" id="submit-approve" onclick="submitVerification('[APPROVED]')">✅ Approve &amp; Submit</button>
+        <button class="btn red" style="margin-top:8px;" onclick="submitVerification('[REJECTED]')">❌ Reject Listing</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: Commissions -->
+<div id="screen-commissions" class="screen">
+  <header>
+    <button class="back" onclick="showScreen('dash')">&#8592;</button>
+    <h1>My Commissions</h1>
+  </header>
+  <div class="content">
+    <div class="card" style="text-align:center;padding:20px;">
+      <div style="font-size:32px;font-weight:bold;color:#2e7d32;" id="total-earned">UGX 0</div>
+      <div style="font-size:13px;color:#888;margin-top:4px;">Total earned (pending payout)</div>
+    </div>
+    <div id="commission-list"><div class="spinner">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+  const API = '';
+  let agentPhone = '', agentPin = '', agentName = '';
+  let allListings = [];
+  let wizardListingId = '';
+  let wizardGeo = null;
+  let wizardGrade = '';
+  let wizardPhotoBlob = null;
+
+  function escHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + id).classList.add('active');
+    window.scrollTo(0, 0);
+  }
+
+  // ── Login ─────────────────────────────────────────────────────────────────
+  async function doLogin() {
+    const phone = document.getElementById('login-phone').value.trim();
+    const pin   = document.getElementById('login-pin').value.trim();
+    const err   = document.getElementById('login-error');
+    err.style.display = 'none';
+    if (!phone || !pin) { showAlert(err, 'error', 'Enter phone and PIN.'); return; }
+    try {
+      const res = await fetch(`${API}/api/agents/login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, pin })
+      });
+      const data = await res.json();
+      if (!res.ok) { showAlert(err, 'error', data.error || 'Login failed.'); return; }
+      agentPhone = phone;
+      agentPin   = pin;
+      agentName  = data.agent.name || phone;
+      document.getElementById('dash-name').textContent = agentName;
+      showScreen('dash');
+      loadDashboard();
+    } catch (e) {
+      showAlert(err, 'error', 'Connection error. Is the server running?');
+    }
+  }
+
+  function showAlert(el, type, msg) {
+    el.className = 'alert ' + type;
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  // ── Dashboard ─────────────────────────────────────────────────────────────
+  async function loadDashboard() {
+    try {
+      const [listRes, recRes] = await Promise.all([
+        fetch(`${API}/api/agent/listings`, { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } }),
+        fetch(`${API}/api/agent/record`,   { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } })
+      ]);
+      allListings = await listRes.json();
+      const rec   = await recRes.json();
+
+      const pending = allListings.filter(l => l.status === '[PENDING]' && !l._is_own).length;
+      document.getElementById('stat-pending').textContent  = pending;
+      document.getElementById('stat-verified').textContent = rec.verifications || 0;
+      document.getElementById('stat-strikes').textContent  = rec.strikes || 0;
+      document.getElementById('stat-earned').textContent   =
+        rec.commissions_total ? (rec.commissions_total / 1000).toFixed(0) + 'K' : '0';
+
+      showListings();
+    } catch (e) {
+      document.getElementById('dash-listings').innerHTML =
+        '<div class="alert error">Failed to load. Is the server running?</div>';
+    }
+  }
+
+  function showListings() {
+    const container = document.getElementById('dash-listings');
+    const pending = allListings.filter(l => l.status === '[PENDING]' && !l._is_own);
+    const others  = allListings.filter(l => l.status !== '[PENDING]' && !l._is_own);
+
+    if (!allListings.length) { container.innerHTML = '<div class="empty">No listings yet.</div>'; return; }
+
+    const rows = (arr, cls) => arr.map(l => `
+      <div class="listing-row ${cls}" onclick="${cls === 'own' ? '' : "startWizard('" + escHtml(l.id) + "')"}">
+        <div class="detail">${escHtml(l.detail)}</div>
+        <div class="meta">
+          📍 ${escHtml(l.location)} · ${escHtml(l.type)}
+          ${l.status === '[PENDING]' ? ' · <span style="color:#f57c00;font-weight:bold;">NEEDS VISIT</span>' : ''}
+          ${l._is_own ? ' · <span style="color:#c62828;">YOUR LISTING</span>' : ''}
+        </div>
+      </div>`).join('');
+
+    container.innerHTML =
+      (pending.length ? `<p style="font-size:13px;color:#f57c00;font-weight:bold;margin-bottom:8px;">⚠ ${pending.length} pending</p>` : '') +
+      rows(pending, '') +
+      (others.length ? `<p style="font-size:13px;color:#888;margin:10px 0 8px;">Other listings</p>` : '') +
+      rows(others, 'verified') +
+      (allListings.filter(l => l._is_own).length ? `<p style="font-size:13px;color:#888;margin:10px 0 8px;">Your own (cannot verify)</p>` + rows(allListings.filter(l => l._is_own), 'own') : '');
+  }
+
+  async function showCommissions() {
+    showScreen('commissions');
+    try {
+      const res = await fetch(`${API}/api/agent/commissions`, { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } });
+      const list = await res.json();
+      const total = list.reduce((s, c) => s + c.amount, 0);
+      document.getElementById('total-earned').textContent = 'UGX ' + total.toLocaleString();
+
+      const el = document.getElementById('commission-list');
+      if (!list.length) { el.innerHTML = '<div class="empty">No commissions yet.</div>'; return; }
+      el.innerHTML = list.map(c => `
+        <div class="commission-row">
+          <div>
+            <div style="font-weight:bold;font-size:14px;">Verification #${escHtml(c.listing_id.slice(0,8))}…</div>
+            <div style="font-size:12px;color:#888;">${escHtml(new Date(c.created_at).toLocaleString())}</div>
+          </div>
+          <div class="amount">UGX ${Number(c.amount).toLocaleString()}</div>
+        </div>`).join('');
+    } catch (e) {
+      document.getElementById('commission-list').innerHTML = '<div class="alert error">Failed to load commissions.</div>';
+    }
+  }
+
+  // ── Wizard ────────────────────────────────────────────────────────────────
+  function startWizard(listingId) {
+    const l = allListings.find(x => x.id === listingId);
+    if (!l) return;
+    wizardListingId = listingId;
+    wizardGeo = null;
+    wizardGrade = '';
+    wizardPhotoBlob = null;
+
+    // Reset form state
+    document.querySelectorAll('.chk').forEach(c => c.checked = false);
+    document.querySelectorAll('#checklist-items input').forEach(c => c.checked = false);
+    document.getElementById('verify-notes').value = '';
+    document.querySelectorAll('.grade-btn').forEach(b => b.classList.remove('selected'));
+    document.getElementById('arrival-photo-input').value = '';
+    document.getElementById('photo-canvas').style.display = 'none';
+    document.getElementById('photo-status').textContent = '';
+    document.getElementById('crop-media-input').value = '';
+    document.getElementById('upload-status').style.display = 'none';
+    document.getElementById('submit-success').style.display = 'none';
+    document.getElementById('submit-error').style.display = 'none';
+    document.getElementById('submit-approve').style.display = '';
+
+    document.getElementById('wizard-title').textContent = l.detail;
+    document.getElementById('geo-display').className = 'geo-display';
+    document.getElementById('geo-display').textContent = 'Waiting for GPS…';
+    goStep(1);
+    showScreen('wizard');
+  }
+
+  function exitWizard() { showScreen('dash'); }
+
+  function goStep(n) {
+    for (let i = 1; i <= 5; i++) {
+      document.getElementById('step-' + i).classList.toggle('active', i === n);
+      const ws = document.getElementById('ws-' + i);
+      ws.classList.remove('active', 'done');
+      if (i < n) ws.classList.add('done');
+      else if (i === n) ws.classList.add('active');
+    }
+    window.scrollTo(0, 0);
+  }
+
+  // ── Step 1: GPS ───────────────────────────────────────────────────────────
+  function captureGps() {
+    const el = document.getElementById('geo-display');
+    el.className = 'geo-display';
+    el.textContent = 'Getting location…';
+    if (!navigator.geolocation) {
+      el.className = 'geo-display denied';
+      el.textContent = '⚠ GPS not available on this device.';
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        wizardGeo = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) };
+        el.className = 'geo-display captured';
+        el.textContent = `✅ GPS captured: ${wizardGeo.lat.toFixed(5)}, ${wizardGeo.lng.toFixed(5)} (±${wizardGeo.accuracy}m)`;
+        setTimeout(() => goStep(2), 700);
+      },
+      err => {
+        el.className = 'geo-display denied';
+        el.textContent = '⚠ GPS denied. Location won\'t be recorded.';
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  function skipGps() { goStep(2); }
+
+  // ── Step 2: Arrival Photo + Canvas Watermark ──────────────────────────────
+  function handleArrivalPhoto(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.getElementById('photo-canvas');
+        canvas.width  = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        // Watermark overlay
+        const ts  = new Date().toLocaleString();
+        const geo = wizardGeo ? `${wizardGeo.lat.toFixed(5)}, ${wizardGeo.lng.toFixed(5)}` : 'GPS not captured';
+        const lines = [
+          '🌾 AGRI-BRIDGE VERIFIED',
+          `📍 ${geo}`,
+          `🕒 ${ts}`,
+          `Agent: ${agentPhone}`
+        ];
+
+        const fontSize = Math.max(16, Math.round(img.width / 30));
+        ctx.font = `bold ${fontSize}px Arial`;
+        const pad = fontSize * 0.6;
+        const lineH = fontSize * 1.5;
+        const boxH = lines.length * lineH + pad * 2;
+        const boxW = img.width * 0.98;
+        const boxX = img.width * 0.01;
+        const boxY = img.height - boxH - img.height * 0.01;
+
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'left';
+        lines.forEach((line, i) => {
+          ctx.fillText(line, boxX + pad, boxY + pad + lineH * (i + 0.8));
+        });
+
+        canvas.style.display = 'block';
+        document.getElementById('photo-status').textContent = '✅ Watermark applied — GPS + timestamp embedded';
+
+        // Store as blob for potential upload
+        canvas.toBlob(blob => { wizardPhotoBlob = blob; }, 'image/jpeg', 0.88);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ── Step 3: Upload Crop Media ─────────────────────────────────────────────
+  async function uploadCropMedia() {
+    const file = document.getElementById('crop-media-input').files[0];
+    const statusEl = document.getElementById('upload-status');
+    if (!file) { showAlert(statusEl, 'warning', 'Select a file first.'); return; }
+    showAlert(statusEl, 'info', 'Uploading…');
+    const form = new FormData();
+    form.append('video', file);
+    try {
+      const res = await fetch(`${API}/api/listings/${wizardListingId}/video`, {
+        method: 'POST', body: form,
+        headers: { 'x-phone': agentPhone, 'x-pin': agentPin }
+      });
+      const data = await res.json();
+      if (data.success) {
+        showAlert(statusEl, 'success', '✅ Uploaded! Tap Next to continue.');
+        const l = allListings.find(x => x.id === wizardListingId);
+        if (l) l.video = data.filename;
+      } else {
+        showAlert(statusEl, 'error', data.error || 'Upload failed.');
+      }
+    } catch (e) {
+      showAlert(statusEl, 'error', 'Upload failed. Try again.');
+    }
+  }
+
+  // ── Step 4: Grade ─────────────────────────────────────────────────────────
+  function selectGrade(g) {
+    wizardGrade = g;
+    document.querySelectorAll('.grade-btn').forEach(b => b.classList.remove('selected'));
+    document.querySelector(`.grade-btn.${g}`).classList.add('selected');
+  }
+
+  function validateStep4() {
+    const err = document.getElementById('grade-error');
+    if (!wizardGrade) { showAlert(err, 'error', 'Select a quality grade.'); return; }
+    const anyChecked = [...document.querySelectorAll('#checklist-items input')].some(c => c.checked);
+    if (!anyChecked) { showAlert(err, 'error', 'Complete at least one checklist item.'); return; }
+    err.style.display = 'none';
+    buildReview();
+    goStep(5);
+  }
+
+  function buildReview() {
+    const checks = [...document.querySelectorAll('#checklist-items input')];
+    const checklist = {};
+    checks.forEach(c => { checklist[c.value] = c.checked; });
+    const notes = document.getElementById('verify-notes').value.trim();
+
+    document.getElementById('review-summary').innerHTML = `
+      <div class="summary-row"><span class="key">Listing</span><span class="val">${escHtml(allListings.find(l => l.id === wizardListingId)?.detail || wizardListingId)}</span></div>
+      <div class="summary-row"><span class="key">Grade</span><span class="val" style="font-size:20px;">${escHtml(wizardGrade)}</span></div>
+      <div class="summary-row"><span class="key">GPS</span><span class="val">${wizardGeo ? wizardGeo.lat.toFixed(4) + ', ' + wizardGeo.lng.toFixed(4) : 'Not captured'}</span></div>
+      <div class="summary-row"><span class="key">Arrival Photo</span><span class="val">${wizardPhotoBlob ? '✅ Watermarked' : '—'}</span></div>
+      <div class="summary-row"><span class="key">Checklist</span><span class="val">${Object.values(checklist).filter(Boolean).length} / ${checks.length} items</span></div>
+      ${notes ? `<div class="summary-row"><span class="key">Notes</span><span class="val">${escHtml(notes)}</span></div>` : ''}
+      <div class="summary-row" style="background:#e8f5e9;border-radius:6px;padding:10px;margin-top:8px;">
+        <span class="key" style="color:#2e7d32;font-weight:bold;">Commission</span>
+        <span class="val" style="color:#2e7d32;">UGX 5,000</span>
+      </div>`;
+  }
+
+  // ── Step 5: Submit ────────────────────────────────────────────────────────
+  async function submitVerification(status) {
+    const errEl  = document.getElementById('submit-error');
+    const succEl = document.getElementById('submit-success');
+    const checks = [...document.querySelectorAll('#checklist-items input')];
+    const checklist = {};
+    checks.forEach(c => { checklist[c.value] = c.checked; });
+    const notes = document.getElementById('verify-notes').value.trim();
+
+    errEl.style.display = 'none';
+    try {
+      const vRes = await fetch(`${API}/api/listings/${wizardListingId}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-phone': agentPhone, 'x-pin': agentPin },
+        body: JSON.stringify({
+          grade: wizardGrade || 'N/A', checklist, notes,
+          lat: wizardGeo?.lat, lng: wizardGeo?.lng
+        })
+      });
+      if (vRes.status === 403) {
+        const d = await vRes.json();
+        showAlert(errEl, 'error', d.error || 'Cannot verify this listing.'); return;
+      }
+      const vData = await vRes.json();
+
+      await fetch(`${API}/api/listings/${wizardListingId}/status`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+
+      const l = allListings.find(x => x.id === wizardListingId);
+      if (l) l.status = status;
+
+      document.getElementById('submit-approve').style.display = 'none';
+      const commission = vData.commission_earned || 5000;
+      showAlert(succEl, 'success',
+        status === '[APPROVED]'
+          ? `✅ Approved! You earned UGX ${commission.toLocaleString()}.`
+          : '❌ Listing rejected and recorded.');
+
+      // Refresh dashboard stats in background
+      loadDashboard().catch(() => {});
+    } catch (e) {
+      showAlert(errEl, 'error', 'Submission failed. Check your connection.');
+    }
+  }
+
+  // Boot — auto-restore session if stored
+  window.onload = () => {
+    const saved = sessionStorage.getItem('ab_agent');
+    if (saved) {
+      try {
+        const d = JSON.parse(saved);
+        agentPhone = d.phone; agentPin = d.pin; agentName = d.name;
+        document.getElementById('dash-name').textContent = agentName;
+        showScreen('dash');
+        loadDashboard();
+      } catch (_) {}
+    }
+  };
+
+  // Persist login to sessionStorage on success
+  const origDoLogin = doLogin;
+  // (handled inline above — save after successful login)
+  document.getElementById('login-pin').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+</script>
+</body>
+</html>

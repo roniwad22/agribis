@@ -613,6 +613,55 @@ describe('GET /api/agent/record', () => {
         const res = await req(app, 'get', '/api/agent/record', null, { 'x-phone': '+256700000099', 'x-pin': '0000' });
         assert.equal(res.status, 403);
     });
+
+    it('returns commission totals in record', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000099', '5555');
+        helpers.addCommission('+256700000099', 'listing-x', 5000);
+        helpers.addCommission('+256700000099', 'listing-y', 5000);
+        const res = await req(app, 'get', '/api/agent/record', null, { 'x-phone': '+256700000099', 'x-pin': '5555' });
+        assert.equal(res.status, 200);
+        assert.equal(res.body.commissions_count, 2);
+        assert.equal(res.body.commissions_total, 10000);
+    });
+});
+
+// ==========================================
+// AGENT COMMISSIONS
+// ==========================================
+describe('GET /api/agent/commissions', () => {
+    it('returns commission list for agent', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000099', '5555');
+        helpers.addCommission('+256700000099', 'listing-a', 5000);
+        const res = await req(app, 'get', '/api/agent/commissions', null, { 'x-phone': '+256700000099', 'x-pin': '5555' });
+        assert.equal(res.status, 200);
+        assert.ok(Array.isArray(res.body));
+        assert.equal(res.body.length, 1);
+        assert.equal(res.body[0].amount, 5000);
+        assert.equal(res.body[0].agent_phone, '+256700000099');
+    });
+
+    it('rejects invalid credentials', async () => {
+        const { app } = makeApp();
+        const res = await req(app, 'get', '/api/agent/commissions', null, { 'x-phone': '+256700000099', 'x-pin': '0000' });
+        assert.equal(res.status, 403);
+    });
+
+    it('verify endpoint creates a commission and returns commission_earned', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000099', '5555');
+        helpers.addListing({ id: 'cm-listing', time: 'now', phone: '+256700000010', detail: 'Maize', location: 'A', type: 'VILLAGE', status: '[APPROVED]' });
+        const res = await req(app, 'post', '/api/listings/cm-listing/verify',
+            { grade: 'A', checklist: { 'Produce seen': true } },
+            { 'x-phone': '+256700000099', 'x-pin': '5555' }
+        );
+        assert.equal(res.status, 200);
+        assert.equal(res.body.commission_earned, 5000);
+        const commissions = helpers.getAgentCommissions('+256700000099');
+        assert.equal(commissions.length, 1);
+        assert.equal(commissions[0].listing_id, 'cm-listing');
+    });
 });
 
 // ==========================================

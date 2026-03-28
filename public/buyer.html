@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Market Listings — Agri-Bridge</title>
+  <meta name="theme-color" content="#2e7d32">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #f0f4f0; color: #222; min-height: 100vh; }
+
+    header {
+      background: #2e7d32; color: white;
+      padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 20px; }
+    header a { color: rgba(255,255,255,0.8); font-size: 13px; text-decoration: none; }
+
+    .tabs {
+      display: flex; background: white; border-bottom: 2px solid #e0e0e0;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .tab-btn {
+      flex: 1; padding: 14px 8px; border: none; background: none;
+      font-size: 15px; font-weight: bold; color: #888; cursor: pointer;
+      border-bottom: 3px solid transparent; margin-bottom: -2px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn.active { color: #2e7d32; border-bottom-color: #2e7d32; }
+
+    .search-bar {
+      padding: 12px 16px; background: white; border-bottom: 1px solid #e0e0e0;
+    }
+    .search-bar input {
+      width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 15px; outline: none;
+    }
+    .search-bar input:focus { border-color: #2e7d32; }
+
+    #listings-container { padding: 16px; }
+
+    .listing-card {
+      background: white; border-radius: 10px; padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07); margin-bottom: 14px;
+      border-left: 4px solid #2e7d32;
+    }
+    .listing-card .detail { font-size: 17px; font-weight: bold; margin-bottom: 4px; }
+    .listing-card .meta { font-size: 13px; color: #777; margin-bottom: 8px; }
+
+    .badge {
+      display: inline-block; padding: 3px 10px; border-radius: 12px;
+      font-size: 12px; font-weight: bold; margin-right: 6px; margin-top: 4px;
+    }
+    .badge-verified { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+    .badge-trusted  { background: #e8f5e9; color: #2e7d32; }
+    .badge-active   { background: #e3f2fd; color: #1565c0; }
+    .badge-new      { background: #fff3e0; color: #e65100; }
+
+    .trust-row { margin-top: 6px; font-size: 13px; }
+
+    video {
+      width: 100%; margin-top: 10px; border-radius: 6px;
+      max-height: 220px; object-fit: cover;
+    }
+
+    .spinner { text-align: center; padding: 40px; color: #888; font-size: 15px; }
+    .empty   { text-align: center; padding: 40px; color: #999; font-size: 15px; }
+    .error   {
+      margin: 16px; padding: 14px 16px; background: #ffebee; color: #c62828;
+      border: 1px solid #ef9a9a; border-radius: 8px; font-size: 14px;
+    }
+
+    .refresh-row {
+      text-align: center; padding: 10px 0 4px;
+      font-size: 13px; color: #888;
+    }
+    .refresh-row button {
+      background: none; border: none; color: #2e7d32;
+      font-size: 13px; cursor: pointer; text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🌾 Market Listings</h1>
+  <a href="/app/">Full App</a>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" id="tab-village" onclick="switchTab('VILLAGE')">🏘 Village (Farm Gate)</button>
+  <button class="tab-btn" id="tab-city" onclick="switchTab('CITY')">🏙 City (Wholesale)</button>
+</div>
+
+<div class="search-bar">
+  <input type="search" id="crop-search" placeholder="Search crop…" oninput="filterCards(this.value)">
+</div>
+
+<div id="listings-container">
+  <div class="spinner">Loading listings…</div>
+</div>
+
+<script>
+  const API = '';
+  let currentTab = 'VILLAGE';
+  let allCards = [];
+
+  function escHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function switchTab(type) {
+    currentTab = type;
+    document.getElementById('tab-village').classList.toggle('active', type === 'VILLAGE');
+    document.getElementById('tab-city').classList.toggle('active', type === 'CITY');
+    document.getElementById('crop-search').value = '';
+    loadListings();
+  }
+
+  function filterCards(q) {
+    const term = q.trim().toLowerCase();
+    allCards.forEach(({ el, detail }) => {
+      el.style.display = (!term || detail.toLowerCase().includes(term)) ? '' : 'none';
+    });
+  }
+
+  async function loadListings() {
+    const container = document.getElementById('listings-container');
+    container.innerHTML = '<div class="spinner">Loading listings…</div>';
+    allCards = [];
+
+    try {
+      const res = await fetch(`${API}/api/listings/active?type=${currentTab}`);
+      if (!res.ok) throw new Error('Server error');
+      const listings = await res.json();
+
+      if (!listings.length) {
+        container.innerHTML = '<div class="empty">No active listings right now.</div>';
+        return;
+      }
+
+      // Fetch verification + reputation in parallel for all listings
+      const extras = await Promise.all(listings.map(async l => {
+        const [vr, rr] = await Promise.all([
+          fetch(`${API}/api/listings/${l.id}/verification`).then(r => r.json()).catch(() => ({ verified: false })),
+          fetch(`${API}/api/reputation/${encodeURIComponent(l.phone)}`).then(r => r.json()).catch(() => ({ tier: 'NEW', sales: 0, avg: 0, label: '[NEW SELLER]' }))
+        ]);
+        return { v: vr, rep: rr };
+      }));
+
+      container.innerHTML = '';
+      allCards = listings.map((l, i) => {
+        const { v, rep } = extras[i];
+
+        const tierClass = rep.tier === 'TRUSTED' ? 'badge-trusted' : rep.tier === 'ACTIVE' ? 'badge-active' : 'badge-new';
+        const trustBadge = `<span class="badge ${tierClass}">${escHtml(rep.label)}</span>`;
+        const reviewText = rep.sales > 0 ? `${rep.avg}/5 from ${rep.sales} buyer(s)` : 'No reviews yet';
+
+        const verifiedBadge = v && v.verified
+          ? `<span class="badge badge-verified">✅ Agent Verified · Grade ${escHtml(v.grade)}${v.geo ? ' · 📍 GPS' : ''}</span>`
+          : '';
+
+        const videoEl = l.video
+          ? `<video src="/uploads/${escHtml(l.video)}" controls preload="none"></video>`
+          : '';
+
+        const card = document.createElement('div');
+        card.className = 'listing-card';
+        card.innerHTML = `
+          <div class="detail">${escHtml(l.detail)}</div>
+          <div class="meta">📍 ${escHtml(l.location)} &nbsp;·&nbsp; 🕒 ${escHtml(l.time)}</div>
+          <div class="trust-row">${trustBadge} ${verifiedBadge}</div>
+          <div style="font-size:12px;color:#999;margin-top:4px;">${escHtml(reviewText)}</div>
+          ${videoEl}
+        `;
+        container.appendChild(card);
+
+        return { el: card, detail: l.detail };
+      });
+
+      // Append refresh hint
+      const row = document.createElement('div');
+      row.className = 'refresh-row';
+      row.innerHTML = `${listings.length} listing(s) shown · <button onclick="loadListings()">Refresh</button>`;
+      container.appendChild(row);
+
+    } catch (e) {
+      container.innerHTML = '<div class="error">Could not load listings. Is the server running?</div>';
+    }
+  }
+
+  // Boot
+  loadListings();
+</script>
+</body>
+</html>
