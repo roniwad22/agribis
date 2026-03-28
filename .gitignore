@@ -1,4 +1,7 @@
 node_modules
 agribis.db
+agribis.db-wal
+agribis.db-shm
 .env
 *.migrated
+uploads/
