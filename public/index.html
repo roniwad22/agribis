@@ -362,7 +362,7 @@
   function renderRegisterForm() {
     return `
       <div class="alert info">You are not registered yet. Please fill in your details.</div>
-      <div class="card">
+      <div class="card" id="reg-form-card">
         <h3 style="margin-bottom:16px;">Register as Farmer</h3>
         <label>Full Name</label>
         <input type="text" id="reg-name" placeholder="e.g. John Kato">
@@ -372,6 +372,14 @@
         <input type="text" id="reg-district" placeholder="e.g. Mityana">
         <div id="reg-alert" style="display:none;"></div>
         <button class="btn" onclick="submitRegister()">Register</button>
+      </div>
+      <div class="card" id="otp-card" style="display:none;">
+        <h3 style="margin-bottom:16px;">Enter Verification Code</h3>
+        <p style="font-size:14px; color:#555; margin-bottom:14px;">A code was sent to your phone via SMS. Enter it below.</p>
+        <label>OTP Code</label>
+        <input type="text" id="reg-otp" placeholder="e.g. 123456" maxlength="6" inputmode="numeric">
+        <div id="otp-alert" style="display:none;"></div>
+        <button class="btn" onclick="submitOtp()">Verify</button>
       </div>`;
   }
 
@@ -400,14 +408,43 @@
       return;
     }
     try {
-      await fetch(`${API}/api/profiles`, {
+      const res = await fetch(`${API}/api/profiles`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: myPhone, name, parish, district })
       });
-      loadFarmer();
+      const data = await res.json();
+      if (res.ok) {
+        document.getElementById('reg-form-card').style.display = 'none';
+        document.getElementById('otp-card').style.display = '';
+        showAlert(document.getElementById('otp-alert'), 'success', data.message || 'OTP sent to your phone.');
+      } else {
+        showAlert(alertEl, 'error', data.error || 'Registration failed.');
+      }
     } catch (e) {
       showAlert(alertEl, 'error', 'Registration failed. Try again.');
+    }
+  }
+
+  async function submitOtp() {
+    const code = document.getElementById('reg-otp').value.trim();
+    const alertEl = document.getElementById('otp-alert');
+    if (!code) { showAlert(alertEl, 'error', 'Please enter the code.'); return; }
+    try {
+      const res = await fetch(`${API}/api/profiles/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: myPhone, code })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert(alertEl, 'success', 'Verified! Loading your dashboard...');
+        setTimeout(() => loadFarmer(), 1000);
+      } else {
+        showAlert(alertEl, 'error', data.error || 'Invalid code. Try again.');
+      }
+    } catch (e) {
+      showAlert(alertEl, 'error', 'Verification failed. Try again.');
     }
   }
 
