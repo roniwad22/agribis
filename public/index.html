@@ -853,7 +853,7 @@
         </div>
       </div>
       ${verifiedBlock}
-      ${l.status === '[PENDING]' ? `
+      ${!(vData && vData.verified) ? `
       <div class="card">
         <h3 style="margin-bottom:12px;">Verification Checklist</h3>
         <p style="font-size:13px;color:#666;margin-bottom:14px;">Confirm each item before approving:</p>
