@@ -9,7 +9,7 @@ function makeApp(opts) {
     const db = createDb(':memory:');
     seedPrices(db);
     const helpers = createHelpers(db);
-    return { app: createApp(db, null, { adminSecret: TEST_ADMIN_SECRET, ...opts }), db, helpers };
+    return { app: createApp(db, null, { adminSecret: TEST_ADMIN_SECRET, sandbox: false, ...opts }), db, helpers };
 }
 
 // Helper: register and activate an agent for tests
@@ -232,7 +232,10 @@ describe('POST /api/agents/register', () => {
         const code = helpers.getStoredOtp('+256700000090', 'agent_register');
         const res2 = await req(app, 'post', '/api/agents/verify-otp', { phone: '+256700000090', code });
         assert.equal(res2.status, 200);
-        assert.equal(res2.body.status, 'pending');
+        assert.ok(res2.body.success);
+        // Agent should be pending when not in sandbox mode
+        const agent = helpers.getAgent('+256700000090');
+        assert.equal(agent.status, 'pending');
     });
 
     it('rejects missing fields', async () => {

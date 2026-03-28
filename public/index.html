@@ -253,18 +253,26 @@
       <button class="btn secondary" onclick="agentLogin()">Login</button>
     </div>
     <div id="agent-register" class="card" style="display:none;">
-      <label>Phone Number</label>
-      <input type="tel" id="agent-reg-phone" placeholder="+256 7XX XXX XXX">
-      <label>Full Name</label>
-      <input type="text" id="agent-reg-name" placeholder="e.g. Okello James">
-      <label>District</label>
-      <input type="text" id="agent-reg-district" placeholder="e.g. Mityana">
-      <label>Create PIN (4 digits)</label>
-      <input type="password" id="agent-reg-pin" placeholder="4-digit PIN" maxlength="4">
-      <label>Confirm PIN</label>
-      <input type="password" id="agent-reg-confirm" placeholder="Re-enter PIN" maxlength="4">
-      <div id="agent-reg-alert" class="alert" style="display:none;"></div>
-      <button class="btn secondary" onclick="agentRegister()">Register</button>
+      <div id="agent-reg-fields">
+        <label>Phone Number</label>
+        <input type="tel" id="agent-reg-phone" placeholder="+256 7XX XXX XXX">
+        <label>Full Name</label>
+        <input type="text" id="agent-reg-name" placeholder="e.g. Okello James">
+        <label>District</label>
+        <input type="text" id="agent-reg-district" placeholder="e.g. Mityana">
+        <label>Create PIN (4 digits)</label>
+        <input type="password" id="agent-reg-pin" placeholder="4-digit PIN" maxlength="4">
+        <label>Confirm PIN</label>
+        <input type="password" id="agent-reg-confirm" placeholder="Re-enter PIN" maxlength="4">
+        <div id="agent-reg-alert" class="alert" style="display:none;"></div>
+        <button class="btn secondary" onclick="agentRegister()">Register</button>
+      </div>
+      <div id="agent-otp-fields" style="display:none;">
+        <label>Verification Code</label>
+        <input type="text" id="agent-reg-otp" placeholder="e.g. 123456" maxlength="6" inputmode="numeric">
+        <div id="agent-otp-alert" class="alert" style="display:none;"></div>
+        <button class="btn secondary" onclick="agentVerifyOtp()">Verify</button>
+      </div>
     </div>
     <div id="agent-listings" style="display:none;">
       <div style="display:flex;gap:8px;margin-bottom:16px;">
@@ -659,6 +667,7 @@
     document.getElementById('agent-register').style.display = tab === 'register' ? '' : 'none';
   }
 
+  let _agentRegPhone = '';
   async function agentRegister() {
     const phone = document.getElementById('agent-reg-phone').value.trim();
     const name = document.getElementById('agent-reg-name').value.trim();
@@ -676,10 +685,36 @@
       });
       const data = await res.json();
       if (res.ok) {
-        showAlert(alertEl, 'success', 'Registered! Pending admin approval. Switch to Login once approved.');
-        document.getElementById('agent-phone-input').value = phone;
+        _agentRegPhone = phone;
+        document.getElementById('agent-reg-fields').style.display = 'none';
+        document.getElementById('agent-otp-fields').style.display = '';
+        if (data.code) {
+          document.getElementById('agent-reg-otp').value = data.code;
+          showAlert(document.getElementById('agent-otp-alert'), 'success', 'Sandbox — code auto-filled. Click Verify.');
+        } else {
+          showAlert(document.getElementById('agent-otp-alert'), 'success', 'OTP sent to your phone.');
+        }
       } else {
         showAlert(alertEl, 'error', data.error || 'Registration failed.');
+      }
+    } catch (e) { showAlert(alertEl, 'error', 'Connection error.'); }
+  }
+
+  async function agentVerifyOtp() {
+    const code = document.getElementById('agent-reg-otp').value.trim();
+    const alertEl = document.getElementById('agent-otp-alert');
+    if (!code) { showAlert(alertEl, 'error', 'Enter the code.'); return; }
+    try {
+      const res = await fetch(`${API}/api/agents/verify-otp`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: _agentRegPhone, code })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert(alertEl, 'success', 'Registered! Pending admin approval. Switch to Login once approved.');
+        document.getElementById('agent-phone-input').value = _agentRegPhone;
+      } else {
+        showAlert(alertEl, 'error', data.error || 'Invalid code.');
       }
     } catch (e) { showAlert(alertEl, 'error', 'Connection error.'); }
   }

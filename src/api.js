@@ -125,7 +125,10 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         const { name, pin, district } = result.payload;
         const reg = registerAgent(phone, name, pin, district);
         if (reg.error) return res.status(400).json({ error: reg.error });
-        res.json(reg);
+        // Auto-approve agents in sandbox mode for testing
+        if (isSandbox) setAgentStatus(phone, 'active');
+        const msg = isSandbox ? 'Registered and auto-approved (sandbox). You can log in now.' : 'Registered! Pending admin approval.';
+        res.json({ success: true, message: msg });
     });
 
     router.post('/agents/login', authLimit, (req, res) => {
