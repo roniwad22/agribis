@@ -830,3 +830,217 @@ describe('Rate limiting', () => {
         assert.equal(res.status, 429);
     });
 });
+
+// ==========================================
+// PURCHASE LEDGER
+// ==========================================
+describe('POST /api/agent/purchases', () => {
+    it('logs a purchase and returns total price', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000050', '1234', 'Mityana');
+        helpers.saveProfile('+256700000051', 'Farmer Kato', 'Kibibi', 'Mityana');
+        const agentAuth = { 'x-phone': '+256700000050', 'x-pin': '1234' };
+        const res = await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000051', crop: 'Maize', quantity_kg: 100, unit_price: 1200, price_unit: 'per kg', grade: 'A', moisture_level: 13.5
+        }, agentAuth);
+        assert.equal(res.status, 200);
+        assert.ok(res.body.success);
+        assert.equal(res.body.purchase.total_price, 120000);
+    });
+
+    it('rejects without auth', async () => {
+        const { app, helpers } = makeApp();
+        helpers.saveProfile('+256700000051', 'Farmer', 'K', 'M');
+        const res = await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000051', crop: 'Maize', quantity_kg: 100, unit_price: 1200
+        });
+        assert.equal(res.status, 403);
+    });
+
+    it('rejects when farmer not registered', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000050', '1234', 'Mityana');
+        const res = await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000099', crop: 'Maize', quantity_kg: 100, unit_price: 1200
+        }, { 'x-phone': '+256700000050', 'x-pin': '1234' });
+        assert.equal(res.status, 404);
+    });
+
+    it('rejects missing required fields', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000050', '1234', 'Mityana');
+        helpers.saveProfile('+256700000051', 'Farmer', 'K', 'M');
+        const res = await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000051', crop: 'Maize'
+        }, { 'x-phone': '+256700000050', 'x-pin': '1234' });
+        assert.equal(res.status, 400);
+    });
+});
+
+describe('GET /api/agent/purchases', () => {
+    it('returns agent purchase history', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000050', '1234', 'Mityana');
+        helpers.saveProfile('+256700000051', 'Farmer', 'K', 'M');
+        const agentAuth = { 'x-phone': '+256700000050', 'x-pin': '1234' };
+        await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000051', crop: 'Maize', quantity_kg: 100, unit_price: 1200
+        }, agentAuth);
+        const res = await req(app, 'get', '/api/agent/purchases', null, agentAuth);
+        assert.equal(res.status, 200);
+        assert.equal(res.body.length, 1);
+        assert.equal(res.body[0].crop, 'Maize');
+    });
+
+    it('filters unbatched purchases', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000050', '1234', 'Mityana');
+        helpers.saveProfile('+256700000051', 'Farmer', 'K', 'M');
+        const agentAuth = { 'x-phone': '+256700000050', 'x-pin': '1234' };
+        await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000051', crop: 'Maize', quantity_kg: 100, unit_price: 1200
+        }, agentAuth);
+        const res = await req(app, 'get', '/api/agent/purchases?unbatched=true', null, agentAuth);
+        assert.equal(res.status, 200);
+        assert.equal(res.body.length, 1);
+        assert.ok(!res.body[0].batch_id);
+    });
+});
+
+// ==========================================
+// BATCHES
+// ==========================================
+describe('POST /api/agent/batches', () => {
+    it('creates a batch from purchases', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000050', '1234', 'Mityana');
+        helpers.saveProfile('+256700000051', 'Farmer A', 'K', 'M');
+        helpers.saveProfile('+256700000052', 'Farmer B', 'L', 'M');
+        const agentAuth = { 'x-phone': '+256700000050', 'x-pin': '1234' };
+        const p1 = await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000051', crop: 'Maize', quantity_kg: 100, unit_price: 1200, grade: 'A', moisture_level: 13
+        }, agentAuth);
+        const p2 = await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000052', crop: 'Maize', quantity_kg: 200, unit_price: 1100, grade: 'B', moisture_level: 15
+        }, agentAuth);
+        const res = await req(app, 'post', '/api/agent/batches', {
+            crop: 'Maize', purchase_ids: [p1.body.purchase.id, p2.body.purchase.id]
+        }, agentAuth);
+        assert.equal(res.status, 200);
+        assert.ok(res.body.success);
+        assert.equal(res.body.batch.total_quantity_kg, 300);
+        assert.equal(res.body.batch.overall_grade, 'B'); // lowest grade wins
+        assert.ok(res.body.batch.batch_code.startsWith('MIT'));
+    });
+
+    it('rejects empty purchase list', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000050', '1234', 'Mityana');
+        const res = await req(app, 'post', '/api/agent/batches', {
+            crop: 'Maize', purchase_ids: []
+        }, { 'x-phone': '+256700000050', 'x-pin': '1234' });
+        assert.equal(res.status, 400);
+    });
+
+    it('rejects already-batched purchases', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000050', '1234', 'Mityana');
+        helpers.saveProfile('+256700000051', 'Farmer', 'K', 'M');
+        const agentAuth = { 'x-phone': '+256700000050', 'x-pin': '1234' };
+        const p1 = await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000051', crop: 'Maize', quantity_kg: 100, unit_price: 1200
+        }, agentAuth);
+        await req(app, 'post', '/api/agent/batches', {
+            crop: 'Maize', purchase_ids: [p1.body.purchase.id]
+        }, agentAuth);
+        // Try to batch the same purchase again
+        const res = await req(app, 'post', '/api/agent/batches', {
+            crop: 'Maize', purchase_ids: [p1.body.purchase.id]
+        }, agentAuth);
+        assert.equal(res.status, 400);
+        assert.ok(res.body.error.includes('already in a batch'));
+    });
+});
+
+describe('GET /api/batches/:id/trace', () => {
+    it('returns traceability certificate with farmer details', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000050', '1234', 'Mityana');
+        helpers.saveProfile('+256700000051', 'Kato', 'Kibibi', 'Mityana');
+        helpers.saveProfile('+256700000052', 'Amina', 'Nkozi', 'Mpigi');
+        const agentAuth = { 'x-phone': '+256700000050', 'x-pin': '1234' };
+        const p1 = await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000051', crop: 'Beans', quantity_kg: 50, unit_price: 3500, grade: 'A', moisture_level: 12
+        }, agentAuth);
+        const p2 = await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000052', crop: 'Beans', quantity_kg: 80, unit_price: 3400, grade: 'A', moisture_level: 13
+        }, agentAuth);
+        const batch = await req(app, 'post', '/api/agent/batches', {
+            crop: 'Beans', purchase_ids: [p1.body.purchase.id, p2.body.purchase.id]
+        }, agentAuth);
+        const res = await req(app, 'get', `/api/batches/${batch.body.batch.id}/trace`);
+        assert.equal(res.status, 200);
+        assert.equal(res.body.crop, 'Beans');
+        assert.equal(res.body.total_quantity_kg, 130);
+        assert.equal(res.body.farmers.length, 2);
+        assert.equal(res.body.farmers[0].name, 'Kato');
+        assert.equal(res.body.farmers[1].name, 'Amina');
+    });
+});
+
+describe('POST /api/batches/:id/sell', () => {
+    it('records batch sale and calculates margin', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000050', '1234', 'Mityana');
+        helpers.saveProfile('+256700000051', 'Farmer', 'K', 'M');
+        const agentAuth = { 'x-phone': '+256700000050', 'x-pin': '1234' };
+        const p1 = await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000051', crop: 'Maize', quantity_kg: 100, unit_price: 1200
+        }, agentAuth);
+        const batch = await req(app, 'post', '/api/agent/batches', {
+            crop: 'Maize', purchase_ids: [p1.body.purchase.id]
+        }, agentAuth);
+        const res = await req(app, 'post', `/api/batches/${batch.body.batch.id}/sell`, {
+            sale_price: 150000, buyer_phone: '+256700000060'
+        }, agentAuth);
+        assert.equal(res.status, 200);
+        assert.ok(res.body.success);
+        assert.equal(res.body.cost_basis, 120000);
+        assert.equal(res.body.sale_price, 150000);
+        assert.equal(res.body.margin, 30000);
+        assert.equal(res.body.platform_fee, 3000); // 10% of margin
+    });
+
+    it('rejects selling another agents batch', async () => {
+        const { app, helpers } = makeApp();
+        setupAgent(helpers, '+256700000050', '1234', 'Mityana');
+        setupAgent(helpers, '+256700000055', '5678', 'Kampala');
+        helpers.saveProfile('+256700000051', 'Farmer', 'K', 'M');
+        const agentAuth1 = { 'x-phone': '+256700000050', 'x-pin': '1234' };
+        const agentAuth2 = { 'x-phone': '+256700000055', 'x-pin': '5678' };
+        const p1 = await req(app, 'post', '/api/agent/purchases', {
+            farmer_phone: '+256700000051', crop: 'Maize', quantity_kg: 100, unit_price: 1200
+        }, agentAuth1);
+        const batch = await req(app, 'post', '/api/agent/batches', {
+            crop: 'Maize', purchase_ids: [p1.body.purchase.id]
+        }, agentAuth1);
+        const res = await req(app, 'post', `/api/batches/${batch.body.batch.id}/sell`, {
+            sale_price: 150000
+        }, agentAuth2);
+        assert.equal(res.status, 403);
+    });
+});
+
+describe('Farmer listing dispatches leads to agents', () => {
+    it('returns agents_notified count on farmer listing', async () => {
+        const { app, helpers } = makeApp();
+        helpers.saveProfile('+256700000060', 'Farmer X', 'Kibibi', 'Mityana');
+        setupAgent(helpers, '+256700000070', '1234', 'Mityana');
+        const res = await req(app, 'post', '/api/listings/farmer', {
+            phone: '+256700000060', detail: 'Maize 100kg', asking_price: 1200, stock: '500kg'
+        });
+        assert.equal(res.status, 200);
+        assert.ok(res.body.success);
+        assert.equal(res.body.agents_notified, 1);
+    });
+});

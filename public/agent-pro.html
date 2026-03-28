@@ -186,9 +186,13 @@
       </div>
     </div>
 
-    <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
       <button class="btn" style="flex:1;margin:0;padding:10px;font-size:13px;" onclick="showListings()">📋 Listings</button>
       <button class="btn" style="flex:1;margin:0;padding:10px;font-size:13px;background:#2e7d32;" onclick="showCommissions()">💰 Commissions</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <button class="btn orange" style="flex:1;margin:0;padding:10px;font-size:13px;" onclick="showPurchaseForm()">🛒 Log Purchase</button>
+      <button class="btn" style="flex:1;margin:0;padding:10px;font-size:13px;background:#6a1b9a;" onclick="showBatches()">📦 Batches</button>
     </div>
 
     <div id="dash-listings">
@@ -314,6 +318,109 @@
     </div>
     <div id="commission-list"><div class="spinner">Loading…</div></div>
   </div>
+</div>
+
+<!-- SCREEN: Log Purchase -->
+<div id="screen-purchase" class="screen">
+  <header>
+    <button class="back" onclick="showScreen('dash')">&#8592;</button>
+    <h1>Log Purchase</h1>
+  </header>
+  <div class="content">
+    <div class="card">
+      <h3 style="margin-bottom:12px;">🛒 Farm-Gate Purchase</h3>
+      <p style="font-size:13px;color:#666;margin-bottom:16px;">Record a purchase from a farmer. They will receive an SMS receipt.</p>
+      <label>Farmer Phone</label>
+      <input type="tel" id="pur-farmer" placeholder="+256 7XX XXX XXX">
+      <label>Crop</label>
+      <input type="text" id="pur-crop" placeholder="e.g. Maize">
+      <label>Quantity (kg)</label>
+      <input type="number" id="pur-qty" placeholder="e.g. 100" step="0.1">
+      <label>Unit Price (UGX)</label>
+      <input type="number" id="pur-price" placeholder="e.g. 1200">
+      <label>Price Unit</label>
+      <select id="pur-unit">
+        <option value="per kg">per kg</option>
+        <option value="per bunch">per bunch</option>
+        <option value="per bag">per bag</option>
+        <option value="per tin">per tin</option>
+        <option value="per sack">per sack</option>
+        <option value="per basin">per basin</option>
+      </select>
+      <label>Quality Grade</label>
+      <div style="display:flex;gap:8px;margin:6px 0 14px;">
+        <button class="grade-btn A" onclick="selectPurGrade('A',this)">A</button>
+        <button class="grade-btn B" onclick="selectPurGrade('B',this)">B</button>
+        <button class="grade-btn C" onclick="selectPurGrade('C',this)">C</button>
+      </div>
+      <label>Moisture Level (%)</label>
+      <input type="number" id="pur-moisture" placeholder="e.g. 13.5" step="0.1">
+      <label>Transaction Time</label>
+      <input type="datetime-local" id="pur-time">
+      <label>Notes</label>
+      <input type="text" id="pur-notes" placeholder="Any observations...">
+      <div id="pur-total" style="background:#e8f5e9;border-radius:8px;padding:12px;text-align:center;font-size:18px;font-weight:bold;color:#2e7d32;margin-bottom:12px;display:none;"></div>
+      <div id="pur-error" style="display:none;"></div>
+      <div id="pur-success" style="display:none;"></div>
+      <button class="btn green" onclick="submitPurchase()">✅ Log Purchase & Send Receipt</button>
+    </div>
+    <div style="margin-top:12px;">
+      <button class="btn" style="background:#555;" onclick="showPurchaseHistory()">📜 Purchase History</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: Purchase History -->
+<div id="screen-purchases" class="screen">
+  <header>
+    <button class="back" onclick="showScreen('purchase')">&#8592;</button>
+    <h1>Purchase History</h1>
+  </header>
+  <div class="content">
+    <div id="purchase-list"><div class="spinner">Loading...</div></div>
+  </div>
+</div>
+
+<!-- SCREEN: Batches -->
+<div id="screen-batches" class="screen">
+  <header>
+    <button class="back" onclick="showScreen('dash')">&#8592;</button>
+    <h1>My Batches</h1>
+  </header>
+  <div class="content">
+    <button class="btn" style="margin-bottom:14px;background:#6a1b9a;" onclick="showCreateBatch()">+ Create New Batch</button>
+    <div id="batch-list"><div class="spinner">Loading...</div></div>
+  </div>
+</div>
+
+<!-- SCREEN: Create Batch -->
+<div id="screen-create-batch" class="screen">
+  <header>
+    <button class="back" onclick="showBatches()">&#8592;</button>
+    <h1>Create Batch</h1>
+  </header>
+  <div class="content">
+    <div class="card">
+      <h3 style="margin-bottom:12px;">📦 Group Purchases into Batch</h3>
+      <p style="font-size:13px;color:#666;margin-bottom:16px;">Select unbatched purchases to combine into a sellable lot.</p>
+      <label>Crop Name</label>
+      <input type="text" id="batch-crop" placeholder="e.g. Maize">
+      <div id="unbatched-list" style="margin-bottom:14px;"><div class="spinner">Loading...</div></div>
+      <div id="batch-summary" style="display:none;background:#f3e5f5;border-radius:8px;padding:12px;margin-bottom:12px;"></div>
+      <div id="batch-error" style="display:none;"></div>
+      <div id="batch-success" style="display:none;"></div>
+      <button class="btn" style="background:#6a1b9a;" onclick="submitBatch()">📦 Create Batch</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: Batch Detail -->
+<div id="screen-batch-detail" class="screen">
+  <header>
+    <button class="back" onclick="showBatches()">&#8592;</button>
+    <h1 id="batch-detail-title">Batch Detail</h1>
+  </header>
+  <div class="content" id="batch-detail-content"></div>
 </div>
 
 <script>
@@ -678,6 +785,238 @@
       loadDashboard().catch(() => {});
     } catch (e) {
       showAlert(errEl, 'error', 'Submission failed. Check your connection.');
+    }
+  }
+
+  // ── Purchase Ledger ─────────────────────────────────────────────────────
+  let purGrade = '';
+  function selectPurGrade(g, btn) {
+    purGrade = g;
+    btn.closest('div').querySelectorAll('.grade-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+  }
+
+  function showPurchaseForm() {
+    purGrade = '';
+    ['pur-farmer','pur-crop','pur-qty','pur-price','pur-moisture','pur-notes'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('pur-unit').value = 'per kg';
+    document.getElementById('pur-time').value = new Date().toISOString().slice(0,16);
+    document.getElementById('pur-total').style.display = 'none';
+    document.getElementById('pur-error').style.display = 'none';
+    document.getElementById('pur-success').style.display = 'none';
+    document.querySelectorAll('#screen-purchase .grade-btn').forEach(b => b.classList.remove('selected'));
+    showScreen('purchase');
+
+    // Auto-calc total
+    const qtyEl = document.getElementById('pur-qty');
+    const priceEl = document.getElementById('pur-price');
+    const calc = () => {
+      const q = parseFloat(qtyEl.value) || 0;
+      const p = parseInt(priceEl.value) || 0;
+      const total = Math.round(q * p);
+      const el = document.getElementById('pur-total');
+      if (total > 0) { el.textContent = `Total: ${total.toLocaleString()} UGX`; el.style.display = 'block'; }
+      else { el.style.display = 'none'; }
+    };
+    qtyEl.oninput = calc;
+    priceEl.oninput = calc;
+  }
+
+  async function submitPurchase() {
+    const errEl = document.getElementById('pur-error');
+    const succEl = document.getElementById('pur-success');
+    errEl.style.display = 'none'; succEl.style.display = 'none';
+
+    const body = {
+      farmer_phone: document.getElementById('pur-farmer').value.trim(),
+      crop: document.getElementById('pur-crop').value.trim(),
+      quantity_kg: document.getElementById('pur-qty').value,
+      unit_price: document.getElementById('pur-price').value,
+      price_unit: document.getElementById('pur-unit').value,
+      grade: purGrade || null,
+      moisture_level: document.getElementById('pur-moisture').value || null,
+      transaction_time: document.getElementById('pur-time').value ? new Date(document.getElementById('pur-time').value).toISOString() : null,
+      notes: document.getElementById('pur-notes').value.trim() || null
+    };
+
+    if (!body.farmer_phone || !body.crop || !body.quantity_kg || !body.unit_price) {
+      showAlert(errEl, 'error', 'Farmer phone, crop, quantity, and price are required.');
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API}/api/agent/purchases`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-phone': agentPhone, 'x-pin': agentPin },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) { showAlert(errEl, 'error', data.error || 'Failed to log purchase.'); return; }
+      showAlert(succEl, 'success', `Purchase logged! Total: ${data.purchase.total_price.toLocaleString()} UGX. SMS receipt sent to farmer.`);
+    } catch (e) {
+      showAlert(errEl, 'error', 'Connection error.');
+    }
+  }
+
+  async function showPurchaseHistory() {
+    showScreen('purchases');
+    const el = document.getElementById('purchase-list');
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    try {
+      const res = await fetch(`${API}/api/agent/purchases`, { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } });
+      const list = await res.json();
+      if (!list.length) { el.innerHTML = '<div class="empty">No purchases yet.</div>'; return; }
+      el.innerHTML = list.map(p => `
+        <div class="listing-row" style="border-left-color:${p.batch_id ? '#6a1b9a' : '#f57c00'};">
+          <div class="detail">${escHtml(p.crop)} — ${p.quantity_kg}kg @ ${Number(p.unit_price).toLocaleString()} ${escHtml(p.price_unit)}</div>
+          <div class="meta">
+            👤 ${escHtml(p.farmer_phone)} · ${p.grade ? 'Grade ' + escHtml(p.grade) : ''}
+            ${p.moisture_level ? ' · 💧' + p.moisture_level + '%' : ''}
+            · ${Number(p.total_price).toLocaleString()} UGX
+            ${p.batch_id ? ' · <span style="color:#6a1b9a;font-weight:bold;">BATCHED</span>' : ' · <span style="color:#f57c00;">UNBATCHED</span>'}
+          </div>
+          <div style="font-size:11px;color:#aaa;margin-top:4px;">
+            🕒 Deal: ${new Date(p.transaction_time).toLocaleString()} · Synced: ${new Date(p.synced_at).toLocaleString()}
+          </div>
+        </div>`).join('');
+    } catch (e) {
+      el.innerHTML = '<div class="alert error">Failed to load.</div>';
+    }
+  }
+
+  // ── Batches ────────────────────────────────────────────────────────────
+  async function showBatches() {
+    showScreen('batches');
+    const el = document.getElementById('batch-list');
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    try {
+      const res = await fetch(`${API}/api/agent/batches`, { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } });
+      const list = await res.json();
+      if (!list.length) { el.innerHTML = '<div class="empty">No batches yet. Create one from your purchases.</div>'; return; }
+      el.innerHTML = list.map(b => `
+        <div class="listing-row" style="border-left-color:${b.status === 'sold' ? '#2e7d32' : b.status === 'closed' ? '#888' : '#6a1b9a'}; cursor:pointer;" onclick="openBatchDetail('${escHtml(b.id)}')">
+          <div class="detail">📦 ${escHtml(b.batch_code)} — ${escHtml(b.crop)}</div>
+          <div class="meta">
+            ${b.total_quantity_kg}kg · ${b.purchase_count} purchases
+            ${b.overall_grade ? ' · Grade ' + escHtml(b.overall_grade) : ''}
+            ${b.avg_moisture ? ' · 💧' + b.avg_moisture + '%' : ''}
+            · <span style="font-weight:bold;color:${b.status === 'sold' ? '#2e7d32' : '#6a1b9a'};">${b.status.toUpperCase()}</span>
+          </div>
+        </div>`).join('');
+    } catch (e) {
+      el.innerHTML = '<div class="alert error">Failed to load.</div>';
+    }
+  }
+
+  let unbatchedPurchases = [];
+  async function showCreateBatch() {
+    showScreen('create-batch');
+    document.getElementById('batch-crop').value = '';
+    document.getElementById('batch-summary').style.display = 'none';
+    document.getElementById('batch-error').style.display = 'none';
+    document.getElementById('batch-success').style.display = 'none';
+    const el = document.getElementById('unbatched-list');
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    try {
+      const res = await fetch(`${API}/api/agent/purchases?unbatched=true`, { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } });
+      unbatchedPurchases = await res.json();
+      if (!unbatchedPurchases.length) { el.innerHTML = '<div class="empty">No unbatched purchases. Log some purchases first.</div>'; return; }
+      el.innerHTML = '<label style="margin-bottom:8px;display:block;">Select purchases:</label>' +
+        unbatchedPurchases.map((p, i) => `
+        <div class="checklist-item">
+          <input type="checkbox" id="bp-${i}" value="${escHtml(p.id)}" onchange="updateBatchSummary()">
+          <label for="bp-${i}" style="flex:1;font-size:14px;">
+            <strong>${escHtml(p.crop)}</strong> — ${p.quantity_kg}kg @ ${Number(p.unit_price).toLocaleString()}
+            ${p.grade ? ' · Grade ' + escHtml(p.grade) : ''}
+            <br><span style="color:#888;font-size:12px;">👤 ${escHtml(p.farmer_phone)} · ${Number(p.total_price).toLocaleString()} UGX</span>
+          </label>
+        </div>`).join('');
+    } catch (e) {
+      el.innerHTML = '<div class="alert error">Failed to load.</div>';
+    }
+  }
+
+  function updateBatchSummary() {
+    const checked = [...document.querySelectorAll('#unbatched-list input:checked')];
+    const el = document.getElementById('batch-summary');
+    if (!checked.length) { el.style.display = 'none'; return; }
+    const selected = checked.map(c => unbatchedPurchases.find(p => p.id === c.value)).filter(Boolean);
+    const totalQty = selected.reduce((s, p) => s + p.quantity_kg, 0);
+    const totalCost = selected.reduce((s, p) => s + p.total_price, 0);
+    const grades = selected.filter(p => p.grade).map(p => p.grade);
+    const gradeOrder = { 'A': 3, 'B': 2, 'C': 1 };
+    const lowest = grades.length ? Object.entries(gradeOrder).find(([, v]) => v === Math.min(...grades.map(g => gradeOrder[g] || 0)))?.[0] : '—';
+    el.innerHTML = `
+      <div style="font-weight:bold;margin-bottom:6px;">Batch Summary</div>
+      <div style="font-size:14px;">📊 ${selected.length} purchases · ${totalQty}kg total</div>
+      <div style="font-size:14px;">💰 Cost basis: ${totalCost.toLocaleString()} UGX</div>
+      <div style="font-size:14px;">📋 Overall grade: ${lowest}</div>`;
+    el.style.display = 'block';
+
+    // Auto-fill crop from first selected
+    if (!document.getElementById('batch-crop').value && selected.length) {
+      document.getElementById('batch-crop').value = selected[0].crop;
+    }
+  }
+
+  async function submitBatch() {
+    const errEl = document.getElementById('batch-error');
+    const succEl = document.getElementById('batch-success');
+    errEl.style.display = 'none'; succEl.style.display = 'none';
+
+    const crop = document.getElementById('batch-crop').value.trim();
+    const checked = [...document.querySelectorAll('#unbatched-list input:checked')];
+    const purchaseIds = checked.map(c => c.value);
+
+    if (!crop) { showAlert(errEl, 'error', 'Enter the crop name.'); return; }
+    if (!purchaseIds.length) { showAlert(errEl, 'error', 'Select at least one purchase.'); return; }
+
+    try {
+      const res = await fetch(`${API}/api/agent/batches`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-phone': agentPhone, 'x-pin': agentPin },
+        body: JSON.stringify({ crop, purchase_ids: purchaseIds })
+      });
+      const data = await res.json();
+      if (!res.ok) { showAlert(errEl, 'error', data.error || 'Failed to create batch.'); return; }
+      showAlert(succEl, 'success', `Batch ${data.batch.batch_code} created! ${data.batch.total_quantity_kg}kg · Grade ${data.batch.overall_grade || '—'}`);
+    } catch (e) {
+      showAlert(errEl, 'error', 'Connection error.');
+    }
+  }
+
+  async function openBatchDetail(batchId) {
+    showScreen('batch-detail');
+    const el = document.getElementById('batch-detail-content');
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    try {
+      const res = await fetch(`${API}/api/batches/${batchId}/trace`);
+      const data = await res.json();
+      document.getElementById('batch-detail-title').textContent = `Batch ${data.batch_code}`;
+      el.innerHTML = `
+        <div class="card" style="text-align:center;">
+          <div style="font-size:32px;">📦</div>
+          <h2 style="margin:8px 0;">${escHtml(data.batch_code)}</h2>
+          <div style="font-size:18px;font-weight:bold;color:#6a1b9a;">${escHtml(data.crop)} · ${data.total_quantity_kg}kg</div>
+          <div style="display:flex;justify-content:center;gap:16px;margin-top:12px;">
+            <div><span style="font-size:22px;font-weight:bold;">${escHtml(data.overall_grade || '—')}</span><br><span style="font-size:11px;color:#888;">Grade</span></div>
+            <div><span style="font-size:22px;font-weight:bold;">${data.avg_moisture || '—'}%</span><br><span style="font-size:11px;color:#888;">Moisture</span></div>
+            <div><span style="font-size:22px;font-weight:bold;color:${data.status === 'sold' ? '#2e7d32' : '#6a1b9a'};">${data.status.toUpperCase()}</span><br><span style="font-size:11px;color:#888;">Status</span></div>
+          </div>
+        </div>
+        <h3 style="margin:14px 0 8px;">🌾 Traceability — ${data.farmers.length} Farmers</h3>
+        ${data.farmers.map(f => `
+          <div class="card" style="padding:12px;">
+            <div style="font-weight:bold;">${escHtml(f.name)}</div>
+            <div style="font-size:13px;color:#666;">
+              📍 ${escHtml(f.parish || '—')}, ${escHtml(f.district || '—')} ·
+              ${f.quantity_kg}kg · Grade ${escHtml(f.grade || '—')}
+              ${f.moisture_level ? ' · 💧' + f.moisture_level + '%' : ''}
+            </div>
+            <div style="font-size:11px;color:#aaa;">Purchased: ${new Date(f.purchased_at).toLocaleString()}</div>
+          </div>`).join('')}`;
+    } catch (e) {
+      el.innerHTML = '<div class="alert error">Failed to load batch detail.</div>';
     }
   }
 

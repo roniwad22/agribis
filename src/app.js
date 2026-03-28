@@ -153,6 +153,44 @@ function createDb(dbPath) {
         status TEXT DEFAULT 'pending',
         created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS purchase_ledger (
+        id TEXT PRIMARY KEY,
+        agent_phone TEXT NOT NULL,
+        farmer_phone TEXT NOT NULL,
+        listing_id TEXT,
+        crop TEXT NOT NULL,
+        quantity_kg REAL NOT NULL,
+        unit_price INTEGER NOT NULL,
+        total_price INTEGER NOT NULL,
+        price_unit TEXT DEFAULT 'per kg',
+        grade TEXT,
+        moisture_level REAL,
+        transaction_time TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        lat REAL,
+        lng REAL,
+        notes TEXT,
+        batch_id TEXT,
+        FOREIGN KEY (agent_phone) REFERENCES agents(phone),
+        FOREIGN KEY (farmer_phone) REFERENCES profiles(phone)
+      );
+      CREATE TABLE IF NOT EXISTS batches (
+        id TEXT PRIMARY KEY,
+        agent_phone TEXT NOT NULL,
+        batch_code TEXT NOT NULL UNIQUE,
+        crop TEXT NOT NULL,
+        total_quantity_kg REAL NOT NULL DEFAULT 0,
+        purchase_count INTEGER NOT NULL DEFAULT 0,
+        avg_moisture REAL,
+        overall_grade TEXT,
+        status TEXT DEFAULT 'open',
+        created_at TEXT NOT NULL,
+        closed_at TEXT,
+        sale_price INTEGER,
+        buyer_phone TEXT,
+        sold_at TEXT,
+        FOREIGN KEY (agent_phone) REFERENCES agents(phone)
+      );
     `);
     return db;
 }
@@ -444,6 +482,75 @@ function createHelpers(db) {
                 WHERE status = '[APPROVED]' AND asking_price IS NOT NULL AND asking_price > 0
                 GROUP BY crop, type
             `).all();
+        },
+        // --- Purchase Ledger ---
+        logPurchase(purchase) {
+            db.prepare(`INSERT INTO purchase_ledger
+                (id, agent_phone, farmer_phone, listing_id, crop, quantity_kg, unit_price, total_price, price_unit, grade, moisture_level, transaction_time, synced_at, lat, lng, notes)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+              .run(purchase.id, purchase.agent_phone, purchase.farmer_phone, purchase.listing_id || null,
+                   purchase.crop, purchase.quantity_kg, purchase.unit_price, purchase.total_price,
+                   purchase.price_unit || 'per kg', purchase.grade || null, purchase.moisture_level || null,
+                   purchase.transaction_time, purchase.synced_at,
+                   purchase.lat || null, purchase.lng || null, purchase.notes || null);
+        },
+        getAgentPurchases(agentPhone) {
+            return db.prepare('SELECT * FROM purchase_ledger WHERE agent_phone = ? ORDER BY synced_at DESC LIMIT 100').all(agentPhone);
+        },
+        getUnbatchedPurchases(agentPhone) {
+            return db.prepare('SELECT * FROM purchase_ledger WHERE agent_phone = ? AND batch_id IS NULL ORDER BY synced_at DESC').all(agentPhone);
+        },
+        getPurchase(id) {
+            return db.prepare('SELECT * FROM purchase_ledger WHERE id = ?').get(id) || null;
+        },
+        // --- Batches ---
+        createBatch(batch) {
+            db.prepare(`INSERT INTO batches (id, agent_phone, batch_code, crop, total_quantity_kg, purchase_count, avg_moisture, overall_grade, status, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)`)
+              .run(batch.id, batch.agent_phone, batch.batch_code, batch.crop,
+                   batch.total_quantity_kg, batch.purchase_count,
+                   batch.avg_moisture || null, batch.overall_grade || null,
+                   'open', batch.created_at);
+            // Assign purchases to batch
+            if (batch.purchase_ids && batch.purchase_ids.length) {
+                const update = db.prepare('UPDATE purchase_ledger SET batch_id = ? WHERE id = ?');
+                db.transaction(() => {
+                    for (const pid of batch.purchase_ids) update.run(batch.id, pid);
+                })();
+            }
+        },
+        getBatch(id) {
+            return db.prepare('SELECT * FROM batches WHERE id = ?').get(id) || null;
+        },
+        getBatchByCode(code) {
+            return db.prepare('SELECT * FROM batches WHERE batch_code = ?').get(code) || null;
+        },
+        getAgentBatches(agentPhone) {
+            return db.prepare('SELECT * FROM batches WHERE agent_phone = ? ORDER BY created_at DESC LIMIT 50').all(agentPhone);
+        },
+        getBatchPurchases(batchId) {
+            return db.prepare('SELECT * FROM purchase_ledger WHERE batch_id = ? ORDER BY synced_at DESC').all(batchId);
+        },
+        getBatchTraceability(batchId) {
+            return db.prepare(`
+                SELECT pl.*, p.name as farmer_name, p.parish, p.district
+                FROM purchase_ledger pl
+                LEFT JOIN profiles p ON pl.farmer_phone = p.phone
+                WHERE pl.batch_id = ?
+                ORDER BY pl.transaction_time
+            `).all(batchId);
+        },
+        closeBatch(batchId) {
+            db.prepare("UPDATE batches SET status = 'closed', closed_at = ? WHERE id = ?")
+              .run(new Date().toISOString(), batchId);
+        },
+        sellBatch(batchId, salePrice, buyerPhone) {
+            db.prepare("UPDATE batches SET status = 'sold', sale_price = ?, buyer_phone = ?, sold_at = ? WHERE id = ?")
+              .run(salePrice, buyerPhone || null, new Date().toISOString(), batchId);
+        },
+        getAgentNearFarmer(farmerDistrict, excludePhone) {
+            return db.prepare("SELECT * FROM agents WHERE status = 'active' AND district = ? AND phone != ? ORDER BY RANDOM() LIMIT 3")
+              .all(farmerDistrict || 'Uganda', excludePhone || '');
         }
     };
     return helpers;

@@ -225,7 +225,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     });
 
     // POST /api/listings/farmer  { phone, detail, asking_price?, price_unit?, stock?, lat?, lng? }
-    router.post('/listings/farmer', listLimit, (req, res) => {
+    router.post('/listings/farmer', listLimit, async (req, res) => {
         const { phone, detail, asking_price, price_unit, stock, lat, lng } = req.body;
         if (!phone || !detail) return res.status(400).json({ error: 'phone and detail are required' });
         const profile = getProfile(phone);
@@ -241,7 +241,15 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
             lng: lng ? parseFloat(lng) : null
         };
         addListing(listing);
-        res.json({ success: true, status });
+
+        // Dispatch claimable lead to nearby agents
+        const nearbyAgents = helpers.getAgentNearFarmer(profile.district, phone);
+        for (const agent of nearbyAgents) {
+            const msg = `Agri-Bridge Lead: ${detail} in ${profile.parish}, ${profile.district}. Reply 1 to claim. Ref:${listing.id.slice(0, 8)}`;
+            await sendSms(sms, agent.phone, msg);
+        }
+
+        res.json({ success: true, status, agents_notified: nearbyAgents.length });
     });
 
     // POST /api/listings/broker  { phone, detail, asking_price?, price_unit?, stock? }
@@ -462,6 +470,180 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         const auth = authenticateAgent(phone, pin);
         if (auth.error) return res.status(403).json({ error: auth.error });
         res.json(getAgentCommissions(auth.agent.phone));
+    });
+
+    // ==========================================
+    // PURCHASE LEDGER & BATCHES
+    // ==========================================
+
+    // POST /api/agent/purchases — Log a farm-gate purchase
+    router.post('/agent/purchases', listLimit, async (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const auth = authenticateAgent(phone, pin);
+        if (auth.error) return res.status(403).json({ error: auth.error });
+        const agentPhone = auth.agent.phone;
+
+        const { farmer_phone, listing_id, crop, quantity_kg, unit_price, price_unit, grade, moisture_level, transaction_time, lat, lng, notes } = req.body;
+        if (!farmer_phone || !crop || !quantity_kg || !unit_price) {
+            return res.status(400).json({ error: 'farmer_phone, crop, quantity_kg, and unit_price required' });
+        }
+        const qty = parseFloat(quantity_kg);
+        const price = parseInt(unit_price);
+        if (isNaN(qty) || qty <= 0) return res.status(400).json({ error: 'quantity_kg must be a positive number' });
+        if (isNaN(price) || price <= 0) return res.status(400).json({ error: 'unit_price must be a positive number' });
+
+        const farmer = helpers.getProfile(farmer_phone);
+        if (!farmer) return res.status(404).json({ error: 'Farmer not registered. They must register first.' });
+
+        const totalPrice = Math.round(qty * price);
+        const purchase = {
+            id: crypto.randomUUID(),
+            agent_phone: agentPhone,
+            farmer_phone,
+            listing_id: listing_id || null,
+            crop, quantity_kg: qty, unit_price: price, total_price: totalPrice,
+            price_unit: price_unit || 'per kg',
+            grade: grade || null,
+            moisture_level: moisture_level ? parseFloat(moisture_level) : null,
+            transaction_time: transaction_time || new Date().toISOString(),
+            synced_at: new Date().toISOString(),
+            lat: lat ? parseFloat(lat) : null,
+            lng: lng ? parseFloat(lng) : null,
+            notes: notes || null
+        };
+        helpers.logPurchase(purchase);
+
+        // SMS receipt to farmer
+        const agentName = auth.agent.name || agentPhone;
+        const smsMsg = `Agri-Bridge: Agent ${agentName} purchased ${qty}kg ${crop} from you for ${totalPrice.toLocaleString()} UGX. Ref: ${purchase.id.slice(0, 8)}`;
+        await sendSms(sms, farmer_phone, smsMsg);
+
+        res.json({ success: true, purchase: { id: purchase.id, total_price: totalPrice } });
+    });
+
+    // GET /api/agent/purchases — Agent's purchase history
+    router.get('/agent/purchases', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const auth = authenticateAgent(phone, pin);
+        if (auth.error) return res.status(403).json({ error: auth.error });
+        const unbatched = req.query.unbatched === 'true';
+        const purchases = unbatched
+            ? helpers.getUnbatchedPurchases(auth.agent.phone)
+            : helpers.getAgentPurchases(auth.agent.phone);
+        res.json(purchases);
+    });
+
+    // POST /api/agent/batches — Create a batch from purchases
+    router.post('/agent/batches', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const auth = authenticateAgent(phone, pin);
+        if (auth.error) return res.status(403).json({ error: auth.error });
+        const agentPhone = auth.agent.phone;
+
+        const { purchase_ids, crop } = req.body;
+        if (!purchase_ids || !purchase_ids.length) return res.status(400).json({ error: 'purchase_ids required (array)' });
+        if (!crop) return res.status(400).json({ error: 'crop required' });
+
+        // Validate all purchases belong to this agent and are unbatched
+        const purchases = [];
+        for (const pid of purchase_ids) {
+            const p = helpers.getPurchase(pid);
+            if (!p) return res.status(404).json({ error: `Purchase ${pid} not found` });
+            if (p.agent_phone !== agentPhone) return res.status(403).json({ error: `Purchase ${pid} belongs to another agent` });
+            if (p.batch_id) return res.status(400).json({ error: `Purchase ${pid} already in a batch` });
+            purchases.push(p);
+        }
+
+        const totalQty = purchases.reduce((s, p) => s + p.quantity_kg, 0);
+        const moistures = purchases.filter(p => p.moisture_level != null).map(p => p.moisture_level);
+        const avgMoisture = moistures.length ? Math.round((moistures.reduce((s, m) => s + m, 0) / moistures.length) * 10) / 10 : null;
+
+        // Overall grade = lowest grade in the batch (C < B < A)
+        const gradeOrder = { 'A': 3, 'B': 2, 'C': 1 };
+        const grades = purchases.filter(p => p.grade).map(p => p.grade.toUpperCase());
+        let overallGrade = null;
+        if (grades.length) {
+            const lowest = Math.min(...grades.map(g => gradeOrder[g] || 0));
+            overallGrade = Object.entries(gradeOrder).find(([, v]) => v === lowest)?.[0] || grades[0];
+        }
+
+        // Generate batch code: district prefix + sequential
+        const district = auth.agent.district || 'UG';
+        const prefix = district.slice(0, 3).toUpperCase();
+        const existing = helpers.getAgentBatches(agentPhone);
+        const seq = String(existing.length + 1).padStart(3, '0');
+        const batchCode = `${prefix}-${seq}`;
+
+        const batch = {
+            id: crypto.randomUUID(),
+            agent_phone: agentPhone,
+            batch_code: batchCode,
+            crop,
+            total_quantity_kg: totalQty,
+            purchase_count: purchases.length,
+            avg_moisture: avgMoisture,
+            overall_grade: overallGrade,
+            purchase_ids,
+            created_at: new Date().toISOString()
+        };
+        helpers.createBatch(batch);
+        res.json({ success: true, batch: { id: batch.id, batch_code: batchCode, total_quantity_kg: totalQty, overall_grade: overallGrade, avg_moisture: avgMoisture } });
+    });
+
+    // GET /api/agent/batches — Agent's batch list
+    router.get('/agent/batches', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const auth = authenticateAgent(phone, pin);
+        if (auth.error) return res.status(403).json({ error: auth.error });
+        res.json(helpers.getAgentBatches(auth.agent.phone));
+    });
+
+    // GET /api/batches/:id/trace — Traceability certificate for a batch
+    router.get('/batches/:id/trace', (req, res) => {
+        const batch = helpers.getBatch(req.params.id);
+        if (!batch) return res.status(404).json({ error: 'Batch not found' });
+        const purchases = helpers.getBatchTraceability(batch.id);
+        res.json({
+            batch_code: batch.batch_code,
+            crop: batch.crop,
+            total_quantity_kg: batch.total_quantity_kg,
+            overall_grade: batch.overall_grade,
+            avg_moisture: batch.avg_moisture,
+            status: batch.status,
+            created_at: batch.created_at,
+            farmers: purchases.map(p => ({
+                name: p.farmer_name || 'Unknown',
+                parish: p.parish,
+                district: p.district,
+                quantity_kg: p.quantity_kg,
+                grade: p.grade,
+                moisture_level: p.moisture_level,
+                purchased_at: p.transaction_time
+            }))
+        });
+    });
+
+    // POST /api/batches/:id/sell — Record batch sale
+    router.post('/batches/:id/sell', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const auth = authenticateAgent(phone, pin);
+        if (auth.error) return res.status(403).json({ error: auth.error });
+        const batch = helpers.getBatch(req.params.id);
+        if (!batch) return res.status(404).json({ error: 'Batch not found' });
+        if (batch.agent_phone !== auth.agent.phone) return res.status(403).json({ error: 'Not your batch' });
+        if (batch.status === 'sold') return res.status(400).json({ error: 'Batch already sold' });
+        const { sale_price, buyer_phone } = req.body;
+        if (!sale_price) return res.status(400).json({ error: 'sale_price required' });
+        helpers.sellBatch(batch.id, parseInt(sale_price), buyer_phone);
+
+        // Calculate and record commission
+        const purchases = helpers.getBatchPurchases(batch.id);
+        const costBasis = purchases.reduce((s, p) => s + p.total_price, 0);
+        const margin = parseInt(sale_price) - costBasis;
+        const platformFee = Math.max(0, Math.round(margin * 0.1)); // 10% of margin
+        helpers.addCommission(auth.agent.phone, batch.id, platformFee > 0 ? margin - platformFee : 0);
+
+        res.json({ success: true, cost_basis: costBasis, sale_price: parseInt(sale_price), margin, platform_fee: platformFee });
     });
 
     // POST /api/listings/:id/video  (credentials via x-phone/x-pin headers or query params)
