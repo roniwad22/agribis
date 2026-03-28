@@ -139,13 +139,9 @@
       <span class="icon">🏪</span>
       <div><div class="label">I am a Broker</div><div class="sub">List city wholesale stock</div></div>
     </button>
-    <button class="menu-btn" onclick="goTo('buyer')">
-      <span class="icon">🛒</span>
-      <div><div class="label">I am a Buyer</div><div class="sub">Browse market listings</div></div>
-    </button>
     <button class="menu-btn" onclick="goTo('prices')">
-      <span class="icon">📈</span>
-      <div><div class="label">Market Prices</div><div class="sub">Today's prices in UGX</div></div>
+      <span class="icon">🛒</span>
+      <div><div class="label">Marketplace</div><div class="sub">Prices, listings & buy produce</div></div>
     </button>
     <button class="menu-btn" onclick="goTo('agent')">
       <span class="icon">🎥</span>
@@ -181,65 +177,6 @@
       <label>Crop & Quantity</label>
       <input type="text" id="broker-detail" placeholder="e.g. Matooke 500 bunches">
       <button class="btn secondary" onclick="submitBroker()">Submit Listing</button>
-    </div>
-  </div>
-</div>
-
-<!-- SCREEN: Buyer -->
-<div id="screen-buyer" class="screen">
-  <header>
-    <button class="back" onclick="goTo('menu')">&#8592;</button>
-    <h1>Market Board</h1>
-  </header>
-  <div class="content">
-    <div id="buyer-browse" class="card">
-      <label>Select Market</label>
-      <select id="buyer-type" style="margin-bottom:14px;">
-        <option value="VILLAGE">Farm Gate (Village)</option>
-        <option value="CITY">City Markets (Wholesale)</option>
-      </select>
-      <button class="btn" onclick="loadListings()">Browse Listings</button>
-    </div>
-    <div id="buyer-auth-section">
-      <div style="display:flex;gap:0;margin-bottom:16px;">
-        <button class="filter-btn active" id="buyer-tab-login" onclick="buyerTab('login')" style="flex:1;border-radius:8px 0 0 8px;">Login</button>
-        <button class="filter-btn" id="buyer-tab-register" onclick="buyerTab('register')" style="flex:1;border-radius:0 8px 8px 0;">Register</button>
-      </div>
-      <div id="buyer-login-form" class="card">
-        <p style="font-size:13px;color:#888;margin-bottom:10px;">Log in to leave reviews and contact farmers.</p>
-        <label>Phone Number</label>
-        <input type="tel" id="buyer-phone" placeholder="+256 7XX XXX XXX">
-        <label>Your PIN</label>
-        <input type="password" id="buyer-pin" placeholder="4-digit PIN" maxlength="4">
-        <div id="buyer-login-alert" class="alert" style="display:none;"></div>
-        <button class="btn secondary" onclick="buyerLogin()">Login</button>
-      </div>
-      <div id="buyer-register-form" class="card" style="display:none;">
-        <div id="buyer-reg-fields">
-          <label>Phone Number</label>
-          <input type="tel" id="buyer-reg-phone" placeholder="+256 7XX XXX XXX">
-          <label>Your Name</label>
-          <input type="text" id="buyer-reg-name" placeholder="e.g. Nakato Jane">
-          <label>Create PIN (4 digits)</label>
-          <input type="password" id="buyer-reg-pin" placeholder="4-digit PIN" maxlength="4">
-          <label>Confirm PIN</label>
-          <input type="password" id="buyer-reg-confirm" placeholder="Re-enter PIN" maxlength="4">
-          <div id="buyer-reg-alert" class="alert" style="display:none;"></div>
-          <button class="btn secondary" onclick="buyerRegister()">Register</button>
-        </div>
-        <div id="buyer-otp-fields" style="display:none;">
-          <label>Verification Code</label>
-          <input type="text" id="buyer-reg-otp" placeholder="e.g. 123456" maxlength="6" inputmode="numeric">
-          <div id="buyer-otp-alert" class="alert" style="display:none;"></div>
-          <button class="btn secondary" onclick="buyerVerifyOtp()">Verify</button>
-        </div>
-        <p style="font-size:13px;color:#888;margin-top:12px;">Already a registered farmer? Just use your farmer phone + PIN to log in above.</p>
-      </div>
-    </div>
-    <div id="buyer-results"></div>
-    <div id="buyer-detail" style="display:none;">
-      <button class="btn secondary" onclick="closeBuyerDetail()" style="margin-bottom:12px;">← Back to Listings</button>
-      <div id="buyer-detail-content"></div>
     </div>
   </div>
 </div>
@@ -308,14 +245,62 @@
 <!-- SCREEN: Prices -->
 <div id="screen-prices" class="screen">
   <header>
-    <button class="back" onclick="goTo('menu')">&#8592;</button>
-    <h1>Today's Prices (UGX)</h1>
+    <button class="back" onclick="marketplaceBack()">&#8592;</button>
+    <h1 id="marketplace-title">Marketplace</h1>
   </header>
   <div class="content">
-    <input type="search" id="price-search" placeholder="Search crop..." oninput="filterPrices(this.value)"
-      style="width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #ddd;border-radius:8px;font-size:15px;margin-bottom:12px;outline:none;">
-    <div class="card" id="prices-content">
-      <div class="spinner">Loading...</div>
+    <div id="marketplace-prices">
+      <input type="search" id="price-search" placeholder="Search crop..." oninput="filterPrices(this.value)"
+        style="width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #ddd;border-radius:8px;font-size:15px;margin-bottom:12px;outline:none;">
+      <p style="font-size:13px;color:#888;margin-bottom:10px;">Tap a crop to see available listings</p>
+      <div id="prices-content">
+        <div class="spinner">Loading...</div>
+      </div>
+    </div>
+    <div id="marketplace-listings" style="display:none;">
+      <div id="marketplace-listings-content"></div>
+    </div>
+    <div id="marketplace-detail" style="display:none;">
+      <div id="marketplace-detail-content"></div>
+    </div>
+    <div id="marketplace-auth" style="display:none;">
+      <div class="card">
+        <h3 style="margin-bottom:10px;">Login or Register to Buy</h3>
+        <p style="font-size:13px;color:#888;margin-bottom:12px;">Create an account to contact the farmer and leave reviews.</p>
+        <div style="display:flex;gap:0;margin-bottom:12px;">
+          <button class="filter-btn active" id="mkt-tab-login" onclick="mktAuthTab('login')" style="flex:1;border-radius:8px 0 0 8px;">Login</button>
+          <button class="filter-btn" id="mkt-tab-register" onclick="mktAuthTab('register')" style="flex:1;border-radius:0 8px 8px 0;">Register</button>
+        </div>
+        <div id="mkt-login-form">
+          <label>Phone Number</label>
+          <input type="tel" id="buyer-phone" placeholder="+256 7XX XXX XXX">
+          <label>Your PIN</label>
+          <input type="password" id="buyer-pin" placeholder="4-digit PIN" maxlength="4">
+          <div id="buyer-login-alert" class="alert" style="display:none;"></div>
+          <button class="btn secondary" onclick="buyerLogin()">Login</button>
+        </div>
+        <div id="mkt-register-form" style="display:none;">
+          <div id="buyer-reg-fields">
+            <label>Phone Number</label>
+            <input type="tel" id="buyer-reg-phone" placeholder="+256 7XX XXX XXX">
+            <label>Your Name</label>
+            <input type="text" id="buyer-reg-name" placeholder="e.g. Nakato Jane">
+            <label>Create PIN (4 digits)</label>
+            <input type="password" id="buyer-reg-pin" placeholder="4-digit PIN" maxlength="4">
+            <label>Confirm PIN</label>
+            <input type="password" id="buyer-reg-confirm" placeholder="Re-enter PIN" maxlength="4">
+            <div id="buyer-reg-alert" class="alert" style="display:none;"></div>
+            <button class="btn secondary" onclick="buyerRegister()">Register</button>
+          </div>
+          <div id="buyer-otp-fields" style="display:none;">
+            <label>Verification Code</label>
+            <input type="text" id="buyer-reg-otp" placeholder="e.g. 123456" maxlength="6" inputmode="numeric">
+            <div id="buyer-otp-alert" class="alert" style="display:none;"></div>
+            <button class="btn secondary" onclick="buyerVerifyOtp()">Verify</button>
+          </div>
+          <p style="font-size:13px;color:#888;margin-top:12px;">Already a registered farmer? Just use your farmer phone + PIN to log in.</p>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -334,7 +319,7 @@
   function goTo(screen) {
     if (screen === 'menu') { showScreen('menu'); return; }
     if (screen === 'farmer') { showScreen('farmer'); loadFarmer(); return; }
-    if (screen === 'prices') { showScreen('prices'); loadPrices(); return; }
+    if (screen === 'prices') { showScreen('prices'); showMarketplacePrices(); loadPrices(); return; }
     if (screen === 'agent') { showScreen('agent'); return; }
     showScreen(screen);
   }
@@ -587,23 +572,79 @@
     } catch (e) { showAlert(alertEl, 'error', 'Connection error.'); }
   }
 
-  // ── Buyer ────────────────────────────────────────────────
+  // ── Marketplace (Prices + Listings + Detail) ────────────
   let buyerListingsCache = [];
   let buyerLoggedIn = false;
-  async function loadListings() {
-    const type = document.getElementById('buyer-type').value;
-    const resultsEl = document.getElementById('buyer-results');
-    resultsEl.innerHTML = '<div class="spinner">Loading...</div>';
-    document.getElementById('buyer-detail').style.display = 'none';
-    resultsEl.style.display = '';
+  let mktCurrentCrop = '';
+  let mktViewStack = ['prices']; // tracks navigation: prices -> listings -> detail -> auth
+
+  function showMarketplacePrices() {
+    document.getElementById('marketplace-prices').style.display = '';
+    document.getElementById('marketplace-listings').style.display = 'none';
+    document.getElementById('marketplace-detail').style.display = 'none';
+    document.getElementById('marketplace-auth').style.display = 'none';
+    document.getElementById('marketplace-title').textContent = 'Marketplace';
+    mktViewStack = ['prices'];
+  }
+
+  function marketplaceBack() {
+    if (mktViewStack.length <= 1) { goTo('menu'); return; }
+    mktViewStack.pop();
+    const view = mktViewStack[mktViewStack.length - 1];
+    document.getElementById('marketplace-prices').style.display = view === 'prices' ? '' : 'none';
+    document.getElementById('marketplace-listings').style.display = view === 'listings' ? '' : 'none';
+    document.getElementById('marketplace-detail').style.display = view === 'detail' ? '' : 'none';
+    document.getElementById('marketplace-auth').style.display = view === 'auth' ? '' : 'none';
+    document.getElementById('marketplace-title').textContent =
+      view === 'prices' ? 'Marketplace' : view === 'listings' ? escHtml(mktCurrentCrop) + ' Listings' : 'Listing Detail';
+    window.scrollTo(0, 0);
+  }
+
+  async function loadPrices() {
+    const el = document.getElementById('prices-content');
     try {
-      const res = await fetch(`${API}/api/listings/active?type=${type}`);
-      const listings = await res.json();
+      const res = await fetch(`${API}/api/prices`);
+      const prices = await res.json();
+      el.innerHTML = prices.map(p => `
+        <div class="price-row" data-crop="${escHtml(p.crop.toLowerCase())}" onclick="openCropListings('${escHtml(p.crop)}')" style="cursor:pointer;">
+          <span class="crop">${escHtml(p.crop)}<br><span style="font-size:12px;color:#888;font-weight:normal;">${escHtml(p.unit)}</span></span>
+          <span class="amount">UGX ${Number(p.price).toLocaleString()} &#8250;</span>
+        </div>`).join('');
+      document.getElementById('price-search').value = '';
+      filterPrices('');
+    } catch (e) {
+      el.innerHTML = '<div class="alert error">Failed to load prices.</div>';
+    }
+  }
+
+  function filterPrices(q) {
+    const term = q.toLowerCase();
+    document.querySelectorAll('#prices-content [data-crop]').forEach(row => {
+      row.style.display = row.dataset.crop.includes(term) ? '' : 'none';
+    });
+  }
+
+  async function openCropListings(crop) {
+    mktCurrentCrop = crop;
+    mktViewStack.push('listings');
+    document.getElementById('marketplace-prices').style.display = 'none';
+    document.getElementById('marketplace-listings').style.display = '';
+    document.getElementById('marketplace-title').textContent = crop + ' Listings';
+    const el = document.getElementById('marketplace-listings-content');
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    window.scrollTo(0, 0);
+    try {
+      // Fetch both village and city listings for this crop
+      const [vRes, cRes] = await Promise.all([
+        fetch(`${API}/api/listings/active?type=VILLAGE&crop=${encodeURIComponent(crop)}`),
+        fetch(`${API}/api/listings/active?type=CITY&crop=${encodeURIComponent(crop)}`)
+      ]);
+      const listings = [...await vRes.json(), ...await cRes.json()];
       if (!listings.length) {
-        resultsEl.innerHTML = '<div class="empty">No active listings right now.</div>';
+        el.innerHTML = `<div class="empty">No ${escHtml(crop)} listings available right now.</div>
+          <button class="btn secondary" onclick="marketplaceBack()" style="margin-top:12px;">Back to Prices</button>`;
         return;
       }
-      // Fetch verification + reputation for each listing
       const extras = await Promise.all(listings.map(async l => {
         const [vr, rr] = await Promise.all([
           fetch(`${API}/api/listings/${l.id}/verification`).then(r => r.json()).catch(() => ({ verified: false })),
@@ -611,79 +652,40 @@
         ]);
         return { v: vr, rep: rr };
       }));
-
       buyerListingsCache = listings.map((l, i) => ({ ...l, _v: extras[i].v, _rep: extras[i].rep }));
-      resultsEl.innerHTML = listings.map((l, i) => {
+      el.innerHTML = listings.map((l, i) => {
         const { v, rep } = extras[i];
         const tierColor = rep.tier === 'TRUSTED' ? '#2e7d32' : rep.tier === 'ACTIVE' ? '#1565c0' : '#f57c00';
         const tierBg = rep.tier === 'TRUSTED' ? '#e8f5e9' : rep.tier === 'ACTIVE' ? '#e3f2fd' : '#fff3e0';
-        const trustHeader = `<div style="background:${tierBg};border:1px solid ${tierColor}33;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:13px;color:${tierColor};">
-          <strong>${escHtml(rep.label)}</strong>
-          ${rep.sales > 0 ? ' · ' + rep.avg + '/5 from ' + rep.sales + ' buyer(s)' : ' · No reviews yet'}
-        </div>`;
-        const verifyBadge = v && v.verified
-          ? `<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:8px 12px;margin-top:6px;font-size:12px;">
-              ✅ Agent Verified — Grade <strong>${escHtml(v.grade)}</strong>
-              ${v.geo ? ' · 📍 GPS' : ''}
-            </div>`
-          : '';
+        const mktLabel = l.type === 'CITY' ? 'Wholesale' : 'Farm Gate';
         return `
-        <div class="listing" onclick="openBuyerDetail('${escHtml(l.id)}')" style="cursor:pointer;">
+        <div class="listing" onclick="openListingDetail('${escHtml(l.id)}')" style="cursor:pointer;">
           <div class="detail">${escHtml(l.detail)}</div>
-          <div class="location">📍 ${escHtml(l.location)}</div>
-          ${trustHeader}
-          ${verifyBadge}
-          ${l.video ? `<video src="/uploads/${escHtml(l.video)}" controls style="width:100%;margin-top:10px;border-radius:6px;"></video>` : ''}
+          <div class="location">&#128205; ${escHtml(l.location)} &middot; <span style="font-size:12px;color:#888;">${mktLabel}</span></div>
+          <div style="background:${tierBg};border:1px solid ${tierColor}33;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:13px;color:${tierColor};">
+            <strong>${escHtml(rep.label)}</strong>
+            ${rep.sales > 0 ? ' &middot; ' + rep.avg + '/5 from ' + rep.sales + ' buyer(s)' : ' &middot; No reviews yet'}
+          </div>
+          ${v && v.verified ? `<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:8px 12px;margin-top:6px;font-size:12px;">
+            &#9989; Agent Verified — Grade <strong>${escHtml(v.grade)}</strong>${v.geo ? ' &middot; &#128205; GPS' : ''}</div>` : ''}
         </div>`;
       }).join('');
     } catch (e) {
-      resultsEl.innerHTML = '<div class="alert error">Failed to load listings.</div>';
+      el.innerHTML = '<div class="alert error">Failed to load listings.</div>';
     }
   }
 
-  // ── Buyer Login ─────────────────────────────────────────
-  async function buyerLogin() {
-    const phone = document.getElementById('buyer-phone').value.trim();
-    const pin = document.getElementById('buyer-pin').value.trim();
-    const alertEl = document.getElementById('buyer-login-alert');
-    if (!phone || !pin) { showAlert(alertEl, 'error', 'Enter phone and PIN.'); return; }
-    try {
-      const res = await fetch(`${API}/api/buyers/login`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, pin })
-      });
-      if (!res.ok) {
-        // Try farmer login as fallback
-        const res2 = await fetch(`${API}/api/profiles/login`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone, pin })
-        });
-        if (!res2.ok) {
-          const data = await res2.json();
-          showAlert(alertEl, 'error', data.error || 'Invalid credentials.');
-          return;
-        }
-      }
-      buyerLoggedIn = true;
-      showAlert(alertEl, 'success', 'Logged in! You can now leave reviews.');
-      document.getElementById('buyer-auth-section').style.display = 'none';
-    } catch (e) {
-      showAlert(alertEl, 'error', 'Connection error.');
-    }
-  }
-
-  // ── Buyer Detail & Reviews ──────────────────────────────
-  function closeBuyerDetail() {
-    document.getElementById('buyer-detail').style.display = 'none';
-    document.getElementById('buyer-results').style.display = '';
-  }
-
-  async function openBuyerDetail(id) {
+  async function openListingDetail(id) {
     const l = buyerListingsCache.find(x => x.id === id);
     if (!l) return;
+    mktViewStack.push('detail');
     const v = l._v;
     const rep = l._rep;
-    const el = document.getElementById('buyer-detail-content');
+    const el = document.getElementById('marketplace-detail-content');
+    document.getElementById('marketplace-listings').style.display = 'none';
+    document.getElementById('marketplace-detail').style.display = '';
+    document.getElementById('marketplace-title').textContent = 'Listing Detail';
+    window.scrollTo(0, 0);
 
     const tierColor = rep.tier === 'TRUSTED' ? '#2e7d32' : rep.tier === 'ACTIVE' ? '#1565c0' : '#f57c00';
     const tierBg = rep.tier === 'TRUSTED' ? '#e8f5e9' : rep.tier === 'ACTIVE' ? '#e3f2fd' : '#fff3e0';
@@ -712,8 +714,7 @@
         <h3 style="margin-bottom:10px;">${escHtml(l.detail)}</h3>
         <div style="font-size:14px;color:#555;line-height:1.8;">
           &#128205; <strong>Location:</strong> ${escHtml(l.location)}<br>
-          &#128230; <strong>Type:</strong> ${escHtml(l.type)}<br>
-          &#128222; <strong>Farmer:</strong> <a href="tel:${escHtml(l.phone)}">${escHtml(l.phone)}</a><br>
+          &#128230; <strong>Type:</strong> ${l.type === 'CITY' ? 'Wholesale' : 'Farm Gate'}<br>
           &#128197; <strong>Listed:</strong> ${escHtml(l.time)}
         </div>
         <div style="background:${tierBg};border:1px solid ${tierColor}33;border-radius:8px;padding:8px 12px;margin-top:10px;font-size:13px;color:${tierColor};">
@@ -723,24 +724,70 @@
       </div>
       ${verificationReport}
       ${l.video ? `<div class="card"><h3 style="margin-bottom:10px;">Evidence</h3><video src="/uploads/${escHtml(l.video)}" controls style="width:100%;border-radius:6px;"></video></div>` : ''}
-      ${buyerLoggedIn ? `<div class="card">
-        <h3 style="margin-bottom:12px;">Leave a Review</h3>
-        <label>Rating</label>
-        <div id="review-stars" style="font-size:28px;cursor:pointer;margin-bottom:10px;">
-          ${[1,2,3,4,5].map(n => `<span onclick="setReviewRating(${n})" data-star="${n}" style="color:#ccc;">&#9733;</span>`).join('')}
+      ${buyerLoggedIn ? `
+        <div class="card" style="text-align:center;">
+          <a href="tel:${escHtml(l.phone)}" class="btn" style="display:block;text-decoration:none;">&#128222; Call Farmer: ${escHtml(l.phone)}</a>
         </div>
-        <input type="hidden" id="review-rating" value="0">
-        <label>Comment (optional)</label>
-        <input type="text" id="review-comment" placeholder="e.g. Good quality produce">
-        <div id="review-alert" class="alert" style="display:none;"></div>
-        <button class="btn" onclick="submitReview('${escHtml(l.id)}', '${escHtml(l.phone)}')" style="margin-top:8px;">Submit Review</button>
-      </div>` : `<div class="card" style="text-align:center;">
-        <p style="color:#888;font-size:14px;">Log in to leave a review for this farmer.</p>
-        <button class="btn secondary" onclick="closeBuyerDetail(); document.getElementById('buyer-auth-section').style.display='';" style="margin-top:8px;">Login / Register</button>
-      </div>`}`;
+        <div class="card">
+          <h3 style="margin-bottom:12px;">Leave a Review</h3>
+          <label>Rating</label>
+          <div id="review-stars" style="font-size:28px;cursor:pointer;margin-bottom:10px;">
+            ${[1,2,3,4,5].map(n => `<span onclick="setReviewRating(${n})" data-star="${n}" style="color:#ccc;">&#9733;</span>`).join('')}
+          </div>
+          <input type="hidden" id="review-rating" value="0">
+          <label>Comment (optional)</label>
+          <input type="text" id="review-comment" placeholder="e.g. Good quality produce">
+          <div id="review-alert" class="alert" style="display:none;"></div>
+          <button class="btn" onclick="submitReview('${escHtml(l.id)}', '${escHtml(l.phone)}')" style="margin-top:8px;">Submit Review</button>
+        </div>` : `
+        <div class="card" style="text-align:center;">
+          <p style="font-size:14px;color:#555;margin-bottom:10px;">Want to contact this farmer or leave a review?</p>
+          <button class="btn" onclick="showMktAuth()" style="margin-top:4px;">Login / Register to Buy</button>
+        </div>`}`;
+  }
 
-    document.getElementById('buyer-results').style.display = 'none';
-    document.getElementById('buyer-detail').style.display = '';
+  function showMktAuth() {
+    mktViewStack.push('auth');
+    document.getElementById('marketplace-detail').style.display = 'none';
+    document.getElementById('marketplace-auth').style.display = '';
+    document.getElementById('marketplace-title').textContent = 'Login / Register';
+    window.scrollTo(0, 0);
+  }
+
+  function mktAuthTab(tab) {
+    document.getElementById('mkt-tab-login').classList.toggle('active', tab === 'login');
+    document.getElementById('mkt-tab-register').classList.toggle('active', tab === 'register');
+    document.getElementById('mkt-login-form').style.display = tab === 'login' ? '' : 'none';
+    document.getElementById('mkt-register-form').style.display = tab === 'register' ? '' : 'none';
+  }
+
+  async function buyerLogin() {
+    const phone = document.getElementById('buyer-phone').value.trim();
+    const pin = document.getElementById('buyer-pin').value.trim();
+    const alertEl = document.getElementById('buyer-login-alert');
+    if (!phone || !pin) { showAlert(alertEl, 'error', 'Enter phone and PIN.'); return; }
+    try {
+      const res = await fetch(`${API}/api/buyers/login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, pin })
+      });
+      if (!res.ok) {
+        const res2 = await fetch(`${API}/api/profiles/login`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, pin })
+        });
+        if (!res2.ok) {
+          const data = await res2.json();
+          showAlert(alertEl, 'error', data.error || 'Invalid credentials.');
+          return;
+        }
+      }
+      buyerLoggedIn = true;
+      showAlert(alertEl, 'success', 'Logged in! Going back...');
+      setTimeout(() => { marketplaceBack(); marketplaceBack(); }, 800);
+    } catch (e) {
+      showAlert(alertEl, 'error', 'Connection error.');
+    }
   }
 
   function setReviewRating(n) {
@@ -760,47 +807,15 @@
     try {
       const res = await fetch(`${API}/api/feedback`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-phone': buyerPhone,
-          'x-pin': buyerPin
-        },
+        headers: { 'Content-Type': 'application/json', 'x-phone': buyerPhone, 'x-pin': buyerPin },
         body: JSON.stringify({ listing_id: listingId, farmer_phone: farmerPhone, rating, comment })
       });
       const data = await res.json();
       if (!res.ok) { showAlert(alertEl, 'error', data.error || 'Failed to submit.'); return; }
       showAlert(alertEl, 'success', 'Review submitted! Rating: ' + rating + '/5');
-      // Disable submit button
-      document.querySelector('#buyer-detail .btn:last-child').disabled = true;
-      document.querySelector('#buyer-detail .btn:last-child').textContent = 'Review Submitted';
     } catch (e) {
       showAlert(alertEl, 'error', 'Connection error.');
     }
-  }
-
-  // ── Prices ───────────────────────────────────────────────
-  async function loadPrices() {
-    const el = document.getElementById('prices-content');
-    try {
-      const res = await fetch(`${API}/api/prices`);
-      const prices = await res.json();
-      el.innerHTML = prices.map(p => `
-        <div class="price-row" data-crop="${escHtml(p.crop.toLowerCase())}">
-          <span class="crop">${escHtml(p.crop)}<br><span style="font-size:12px;color:#888;font-weight:normal;">${escHtml(p.unit)}</span></span>
-          <span class="amount">UGX ${Number(p.price).toLocaleString()}</span>
-        </div>`).join('');
-      document.getElementById('price-search').value = '';
-      filterPrices('');
-    } catch (e) {
-      el.innerHTML = '<div class="alert error">Failed to load prices.</div>';
-    }
-  }
-
-  function filterPrices(q) {
-    const term = q.toLowerCase();
-    document.querySelectorAll('#prices-content [data-crop]').forEach(row => {
-      row.style.display = row.dataset.crop.includes(term) ? '' : 'none';
-    });
   }
 
   // ── Agent Tab Toggle ─────────────────────────────────────

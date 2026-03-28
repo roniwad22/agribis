@@ -214,13 +214,14 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     // Accepts buyer OR farmer-with-PIN credentials (unified identity)
     router.get('/listings/active', (req, res) => {
         const type = (req.query.type || 'VILLAGE').toUpperCase();
+        const crop = req.query.crop || null;
         const { phone, pin } = extractCredentials(req);
         if (phone && pin) {
             const buyer = authenticateBuyer(phone, pin);
             const farmer = !buyer ? authenticateProfile(phone, pin) : null;
             if (!buyer && !farmer) return res.status(403).json({ error: 'Invalid credentials' });
         }
-        res.json(getApprovedListings(type));
+        res.json(getApprovedListings(type, crop));
     });
 
     // POST /api/listings/farmer  { phone, detail }

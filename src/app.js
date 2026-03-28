@@ -213,8 +213,11 @@ function createHelpers(db) {
             db.prepare('INSERT INTO listings (id,time,phone,detail,location,type,status) VALUES (?,?,?,?,?,?,?)')
               .run(listing.id, listing.time, listing.phone, listing.detail, listing.location, listing.type, listing.status);
         },
-        getApprovedListings(type) {
-            return db.prepare("SELECT * FROM listings WHERE type = ? AND status = '[APPROVED]' ORDER BY rowid DESC LIMIT 3").all(type);
+        getApprovedListings(type, crop) {
+            if (crop) {
+                return db.prepare("SELECT * FROM listings WHERE type = ? AND status = '[APPROVED]' AND LOWER(detail) LIKE ? ORDER BY rowid DESC LIMIT 20").all(type, '%' + crop.toLowerCase() + '%');
+            }
+            return db.prepare("SELECT * FROM listings WHERE type = ? AND status = '[APPROVED]' ORDER BY rowid DESC LIMIT 20").all(type);
         },
         getListing(id) {
             return db.prepare('SELECT * FROM listings WHERE id = ?').get(id) || null;

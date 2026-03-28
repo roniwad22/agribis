@@ -54,12 +54,12 @@ describe('Database helpers', () => {
             assert.equal(city[0].detail, 'Rice');
         });
 
-        it('getApprovedListings returns max 3', () => {
-            for (let i = 0; i < 5; i++) {
+        it('getApprovedListings returns max 20', () => {
+            for (let i = 0; i < 25; i++) {
                 helpers.addListing({ id: String(i), time: 'now', phone: `+${i}`, detail: `Item ${i}`, location: 'A', type: 'VILLAGE', status: '[APPROVED]' });
             }
             const result = helpers.getApprovedListings('VILLAGE');
-            assert.equal(result.length, 3);
+            assert.equal(result.length, 20);
         });
     });
 
