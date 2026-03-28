@@ -241,19 +241,19 @@
       </div>
     </div>
 
-    <!-- Step 3: Crop Evidence -->
+    <!-- Step 3: Crop Evidence (MANDATORY) -->
     <div class="step-panel" id="step-3">
       <div class="card">
-        <h3 style="margin-bottom:12px;">🎥 Step 3 — Crop Evidence</h3>
+        <h3 style="margin-bottom:12px;">🎥 Step 3 — Crop Evidence <span style="color:#c62828;font-size:14px;">(Required)</span></h3>
         <p style="font-size:14px;color:#666;margin-bottom:16px;">
-          Record a short video or photo of the actual produce listed.
+          Record a short video of the actual produce. This is <strong>mandatory</strong> for verification.
         </p>
         <input type="file" id="crop-media-input" accept="video/*,image/*" capture="environment"
           style="margin-bottom:10px;">
         <div id="upload-status" style="display:none;" class="alert info"></div>
-        <button class="btn orange" onclick="uploadCropMedia()">📤 Upload to Listing</button>
-        <button class="btn green" style="margin-top:8px;" onclick="goStep(4)">Next →</button>
-        <button class="btn" style="background:#888;margin-top:6px;" onclick="goStep(4)">Skip Upload</button>
+        <button class="btn orange" onclick="uploadCropMedia()">📤 Upload Evidence</button>
+        <button class="btn green" id="step3-next" style="margin-top:8px;display:none;" onclick="goStep(4)">Next →</button>
+        <p id="step3-hint" style="font-size:12px;color:#c62828;margin-top:8px;">Upload video evidence before proceeding.</p>
       </div>
     </div>
 
@@ -324,6 +324,7 @@
   let wizardGeo = null;
   let wizardGrade = '';
   let wizardPhotoBlob = null;
+  let wizardVideoUploaded = false;
 
   function escHtml(s) {
     if (s == null) return '';
@@ -446,6 +447,7 @@
     wizardListingId = listingId;
     wizardGeo = null;
     wizardGrade = '';
+    wizardVideoUploaded = false;
     wizardPhotoBlob = null;
 
     // Reset form state
@@ -577,7 +579,10 @@
       });
       const data = await res.json();
       if (data.success) {
+        wizardVideoUploaded = true;
         showAlert(statusEl, 'success', '✅ Uploaded! Tap Next to continue.');
+        document.getElementById('step3-next').style.display = '';
+        document.getElementById('step3-hint').style.display = 'none';
         const l = allListings.find(x => x.id === wizardListingId);
         if (l) l.video = data.filename;
       } else {
@@ -616,6 +621,7 @@
       <div class="summary-row"><span class="key">Grade</span><span class="val" style="font-size:20px;">${escHtml(wizardGrade)}</span></div>
       <div class="summary-row"><span class="key">GPS</span><span class="val">${wizardGeo ? wizardGeo.lat.toFixed(4) + ', ' + wizardGeo.lng.toFixed(4) : 'Not captured'}</span></div>
       <div class="summary-row"><span class="key">Arrival Photo</span><span class="val">${wizardPhotoBlob ? '✅ Watermarked' : '—'}</span></div>
+      <div class="summary-row"><span class="key">Video Evidence</span><span class="val">${wizardVideoUploaded ? '✅ Uploaded' : '❌ Missing'}</span></div>
       <div class="summary-row"><span class="key">Checklist</span><span class="val">${Object.values(checklist).filter(Boolean).length} / ${checks.length} items</span></div>
       ${notes ? `<div class="summary-row"><span class="key">Notes</span><span class="val">${escHtml(notes)}</span></div>` : ''}
       <div class="summary-row" style="background:#e8f5e9;border-radius:6px;padding:10px;margin-top:8px;">
@@ -628,6 +634,10 @@
   async function submitVerification(status) {
     const errEl  = document.getElementById('submit-error');
     const succEl = document.getElementById('submit-success');
+    if (!wizardVideoUploaded) {
+      showAlert(errEl, 'error', 'Video evidence is required. Go back to Step 3 and upload.');
+      return;
+    }
     const checks = [...document.querySelectorAll('#checklist-items input')];
     const checklist = {};
     checks.forEach(c => { checklist[c.value] = c.checked; });
