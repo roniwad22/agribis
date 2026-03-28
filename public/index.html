@@ -192,42 +192,49 @@
     <h1>Market Board</h1>
   </header>
   <div class="content">
-    <div style="display:flex;gap:0;margin-bottom:16px;">
-      <button class="filter-btn active" id="buyer-tab-login" onclick="buyerTab('login')" style="flex:1;border-radius:8px 0 0 8px;">Login</button>
-      <button class="filter-btn" id="buyer-tab-register" onclick="buyerTab('register')" style="flex:1;border-radius:0 8px 8px 0;">Register</button>
-    </div>
-    <div id="buyer-login-form" class="card">
+    <div id="buyer-browse" class="card">
       <label>Select Market</label>
       <select id="buyer-type" style="margin-bottom:14px;">
         <option value="VILLAGE">Farm Gate (Village)</option>
         <option value="CITY">City Markets (Wholesale)</option>
       </select>
-      <label>Phone Number</label>
-      <input type="tel" id="buyer-phone" placeholder="+256 7XX XXX XXX">
-      <label>Your PIN</label>
-      <input type="password" id="buyer-pin" placeholder="4-digit PIN" maxlength="4">
-      <button class="btn" onclick="loadListings()">View Listings</button>
+      <button class="btn" onclick="loadListings()">Browse Listings</button>
     </div>
-    <div id="buyer-register-form" class="card" style="display:none;">
-      <div id="buyer-reg-fields">
+    <div id="buyer-auth-section">
+      <div style="display:flex;gap:0;margin-bottom:16px;">
+        <button class="filter-btn active" id="buyer-tab-login" onclick="buyerTab('login')" style="flex:1;border-radius:8px 0 0 8px;">Login</button>
+        <button class="filter-btn" id="buyer-tab-register" onclick="buyerTab('register')" style="flex:1;border-radius:0 8px 8px 0;">Register</button>
+      </div>
+      <div id="buyer-login-form" class="card">
+        <p style="font-size:13px;color:#888;margin-bottom:10px;">Log in to leave reviews and contact farmers.</p>
         <label>Phone Number</label>
-        <input type="tel" id="buyer-reg-phone" placeholder="+256 7XX XXX XXX">
-        <label>Your Name</label>
-        <input type="text" id="buyer-reg-name" placeholder="e.g. Nakato Jane">
-        <label>Create PIN (4 digits)</label>
-        <input type="password" id="buyer-reg-pin" placeholder="4-digit PIN" maxlength="4">
-        <label>Confirm PIN</label>
-        <input type="password" id="buyer-reg-confirm" placeholder="Re-enter PIN" maxlength="4">
-        <div id="buyer-reg-alert" class="alert" style="display:none;"></div>
-        <button class="btn secondary" onclick="buyerRegister()">Register</button>
+        <input type="tel" id="buyer-phone" placeholder="+256 7XX XXX XXX">
+        <label>Your PIN</label>
+        <input type="password" id="buyer-pin" placeholder="4-digit PIN" maxlength="4">
+        <div id="buyer-login-alert" class="alert" style="display:none;"></div>
+        <button class="btn secondary" onclick="buyerLogin()">Login</button>
       </div>
-      <div id="buyer-otp-fields" style="display:none;">
-        <label>Verification Code</label>
-        <input type="text" id="buyer-reg-otp" placeholder="e.g. 123456" maxlength="6" inputmode="numeric">
-        <div id="buyer-otp-alert" class="alert" style="display:none;"></div>
-        <button class="btn secondary" onclick="buyerVerifyOtp()">Verify</button>
+      <div id="buyer-register-form" class="card" style="display:none;">
+        <div id="buyer-reg-fields">
+          <label>Phone Number</label>
+          <input type="tel" id="buyer-reg-phone" placeholder="+256 7XX XXX XXX">
+          <label>Your Name</label>
+          <input type="text" id="buyer-reg-name" placeholder="e.g. Nakato Jane">
+          <label>Create PIN (4 digits)</label>
+          <input type="password" id="buyer-reg-pin" placeholder="4-digit PIN" maxlength="4">
+          <label>Confirm PIN</label>
+          <input type="password" id="buyer-reg-confirm" placeholder="Re-enter PIN" maxlength="4">
+          <div id="buyer-reg-alert" class="alert" style="display:none;"></div>
+          <button class="btn secondary" onclick="buyerRegister()">Register</button>
+        </div>
+        <div id="buyer-otp-fields" style="display:none;">
+          <label>Verification Code</label>
+          <input type="text" id="buyer-reg-otp" placeholder="e.g. 123456" maxlength="6" inputmode="numeric">
+          <div id="buyer-otp-alert" class="alert" style="display:none;"></div>
+          <button class="btn secondary" onclick="buyerVerifyOtp()">Verify</button>
+        </div>
+        <p style="font-size:13px;color:#888;margin-top:12px;">Already a registered farmer? Just use your farmer phone + PIN to log in above.</p>
       </div>
-      <p style="font-size:13px;color:#888;margin-top:12px;">Already a registered farmer? Just use your farmer phone + PIN to log in above — no separate buyer registration needed.</p>
     </div>
     <div id="buyer-results"></div>
     <div id="buyer-detail" style="display:none;">
@@ -582,21 +589,15 @@
 
   // ── Buyer ────────────────────────────────────────────────
   let buyerListingsCache = [];
+  let buyerLoggedIn = false;
   async function loadListings() {
     const type = document.getElementById('buyer-type').value;
-    const phone = document.getElementById('buyer-phone').value.trim();
-    const pin = document.getElementById('buyer-pin').value.trim();
     const resultsEl = document.getElementById('buyer-results');
-    if (!phone || !pin) { resultsEl.innerHTML = '<div class="alert error">Enter your phone and PIN.</div>'; return; }
     resultsEl.innerHTML = '<div class="spinner">Loading...</div>';
+    document.getElementById('buyer-detail').style.display = 'none';
+    resultsEl.style.display = '';
     try {
-      const res = await fetch(`${API}/api/listings/active?type=${type}`, {
-        headers: { 'x-phone': phone, 'x-pin': pin }
-      });
-      if (res.status === 403) {
-        resultsEl.innerHTML = '<div class="alert error">Invalid credentials. Register first if new.</div>';
-        return;
-      }
+      const res = await fetch(`${API}/api/listings/active?type=${type}`);
       const listings = await res.json();
       if (!listings.length) {
         resultsEl.innerHTML = '<div class="empty">No active listings right now.</div>';
@@ -637,6 +638,37 @@
       }).join('');
     } catch (e) {
       resultsEl.innerHTML = '<div class="alert error">Failed to load listings.</div>';
+    }
+  }
+
+  // ── Buyer Login ─────────────────────────────────────────
+  async function buyerLogin() {
+    const phone = document.getElementById('buyer-phone').value.trim();
+    const pin = document.getElementById('buyer-pin').value.trim();
+    const alertEl = document.getElementById('buyer-login-alert');
+    if (!phone || !pin) { showAlert(alertEl, 'error', 'Enter phone and PIN.'); return; }
+    try {
+      const res = await fetch(`${API}/api/buyers/login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, pin })
+      });
+      if (!res.ok) {
+        // Try farmer login as fallback
+        const res2 = await fetch(`${API}/api/profiles/login`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, pin })
+        });
+        if (!res2.ok) {
+          const data = await res2.json();
+          showAlert(alertEl, 'error', data.error || 'Invalid credentials.');
+          return;
+        }
+      }
+      buyerLoggedIn = true;
+      showAlert(alertEl, 'success', 'Logged in! You can now leave reviews.');
+      document.getElementById('buyer-auth-section').style.display = 'none';
+    } catch (e) {
+      showAlert(alertEl, 'error', 'Connection error.');
     }
   }
 
@@ -691,7 +723,7 @@
       </div>
       ${verificationReport}
       ${l.video ? `<div class="card"><h3 style="margin-bottom:10px;">Evidence</h3><video src="/uploads/${escHtml(l.video)}" controls style="width:100%;border-radius:6px;"></video></div>` : ''}
-      <div class="card">
+      ${buyerLoggedIn ? `<div class="card">
         <h3 style="margin-bottom:12px;">Leave a Review</h3>
         <label>Rating</label>
         <div id="review-stars" style="font-size:28px;cursor:pointer;margin-bottom:10px;">
@@ -702,7 +734,10 @@
         <input type="text" id="review-comment" placeholder="e.g. Good quality produce">
         <div id="review-alert" class="alert" style="display:none;"></div>
         <button class="btn" onclick="submitReview('${escHtml(l.id)}', '${escHtml(l.phone)}')" style="margin-top:8px;">Submit Review</button>
-      </div>`;
+      </div>` : `<div class="card" style="text-align:center;">
+        <p style="color:#888;font-size:14px;">Log in to leave a review for this farmer.</p>
+        <button class="btn secondary" onclick="closeBuyerDetail(); document.getElementById('buyer-auth-section').style.display='';" style="margin-top:8px;">Login / Register</button>
+      </div>`}`;
 
     document.getElementById('buyer-results').style.display = 'none';
     document.getElementById('buyer-detail').style.display = '';
