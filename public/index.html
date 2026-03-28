@@ -91,12 +91,37 @@
     .action-btn.upload { background: #f57c00; }
 
     .price-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 12px 0; border-bottom: 1px solid #eee;
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px; margin-bottom: 10px;
+      background: white; border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      cursor: pointer; transition: transform 0.12s, box-shadow 0.12s;
     }
-    .price-row:last-child { border-bottom: none; }
-    .price-row .crop { font-weight: bold; font-size: 16px; }
-    .price-row .amount { color: #2e7d32; font-weight: bold; font-size: 16px; }
+    .price-row:active { transform: scale(0.98); box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+    .price-row .crop-icon { font-size: 32px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: #f0f7f0; border-radius: 10px; flex-shrink: 0; }
+    .price-row .crop-info { flex: 1; }
+    .price-row .crop-name { font-weight: bold; font-size: 15px; color: #222; }
+    .price-row .crop-unit { font-size: 12px; color: #888; margin-top: 2px; }
+    .price-row .crop-right { text-align: right; flex-shrink: 0; }
+    .price-row .crop-price { color: #2e7d32; font-weight: bold; font-size: 16px; }
+    .price-row .crop-avail { font-size: 11px; color: #888; margin-top: 2px; }
+    .price-row .crop-arrow { color: #bbb; font-size: 18px; margin-left: 4px; }
+
+    .mkt-tabs { display: flex; gap: 0; margin-bottom: 14px; background: #e8e8e8; border-radius: 10px; padding: 3px; }
+    .mkt-tab { flex: 1; padding: 8px; border: none; border-radius: 8px; background: transparent; font-size: 13px; font-weight: bold; cursor: pointer; color: #666; text-align: center; transition: all 0.15s; }
+    .mkt-tab.active { background: white; color: #2e7d32; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+
+    .listing-card {
+      background: white; border-radius: 12px; padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 12px;
+      cursor: pointer; transition: transform 0.12s;
+      border-left: 4px solid #2e7d32;
+    }
+    .listing-card:active { transform: scale(0.98); }
+    .listing-card .lc-title { font-weight: bold; font-size: 16px; color: #222; }
+    .listing-card .lc-location { font-size: 13px; color: #666; margin-top: 4px; }
+    .listing-card .lc-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .listing-card .lc-tag { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; }
 
     .phone-badge {
       background: #e8f5e9; color: #2e7d32; font-size: 13px;
@@ -104,7 +129,7 @@
     }
 
     .spinner { text-align: center; padding: 30px; color: #888; }
-    .empty { text-align: center; padding: 30px; color: #999; font-size: 15px; }
+    .empty { text-align: center; padding: 40px 20px; color: #999; font-size: 15px; }
   </style>
 </head>
 <body>
@@ -250,9 +275,12 @@
   </header>
   <div class="content">
     <div id="marketplace-prices">
-      <input type="search" id="price-search" placeholder="Search crop..." oninput="filterPrices(this.value)"
-        style="width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #ddd;border-radius:8px;font-size:15px;margin-bottom:12px;outline:none;">
-      <p style="font-size:13px;color:#888;margin-bottom:10px;">Tap a crop to see available listings</p>
+      <div style="position:relative;margin-bottom:14px;">
+        <input type="search" id="price-search" placeholder="Search crops..." oninput="filterPrices(this.value)"
+          style="width:100%;box-sizing:border-box;padding:12px 14px 12px 40px;border:1px solid #ddd;border-radius:12px;font-size:15px;outline:none;background:white;">
+        <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:16px;color:#999;">&#128269;</span>
+      </div>
+      <p style="font-size:13px;color:#888;margin-bottom:14px;text-align:center;">Tap a crop to see available listings</p>
       <div id="prices-content">
         <div class="spinner">Loading...</div>
       </div>
@@ -600,15 +628,45 @@
     window.scrollTo(0, 0);
   }
 
+  const cropEmojis = {
+    maize: '🌽', beans: '🫘', coffee: '☕', rice: '🍚', matooke: '🍌',
+    cassava: '🥔', groundnuts: '🥜', millet: '🌾', sorghum: '🌾',
+    wheat: '🌾', soybeans: '🫘', sesame: '🌿', cotton: '🧶',
+    sugar: '🍬', tea: '🍵', tobacco: '🍂', sunflower: '🌻',
+    potatoes: '🥔', tomatoes: '🍅', onions: '🧅', cabbage: '🥬',
+    peas: '🫛', vanilla: '🌿', cocoa: '🍫', bananas: '🍌'
+  };
+  function getCropEmoji(crop) {
+    return cropEmojis[crop.toLowerCase()] || '🌱';
+  }
+
   async function loadPrices() {
     const el = document.getElementById('prices-content');
     try {
       const res = await fetch(`${API}/api/prices`);
       const prices = await res.json();
-      el.innerHTML = prices.map(p => `
-        <div class="price-row" data-crop="${escHtml(p.crop.toLowerCase())}" onclick="openCropListings('${escHtml(p.crop)}')" style="cursor:pointer;">
-          <span class="crop">${escHtml(p.crop)}<br><span style="font-size:12px;color:#888;font-weight:normal;">${escHtml(p.unit)}</span></span>
-          <span class="amount">UGX ${Number(p.price).toLocaleString()} &#8250;</span>
+      // Fetch listing counts per crop in parallel
+      const counts = await Promise.all(prices.map(async p => {
+        try {
+          const [vr, cr] = await Promise.all([
+            fetch(`${API}/api/listings/active?type=VILLAGE&crop=${encodeURIComponent(p.crop)}`).then(r => r.json()),
+            fetch(`${API}/api/listings/active?type=CITY&crop=${encodeURIComponent(p.crop)}`).then(r => r.json())
+          ]);
+          return (Array.isArray(vr) ? vr.length : 0) + (Array.isArray(cr) ? cr.length : 0);
+        } catch { return 0; }
+      }));
+      el.innerHTML = prices.map((p, i) => `
+        <div class="price-row" data-crop="${escHtml(p.crop.toLowerCase())}" onclick="openCropListings('${escHtml(p.crop)}')">
+          <span class="crop-icon">${getCropEmoji(p.crop)}</span>
+          <div class="crop-info">
+            <div class="crop-name">${escHtml(p.crop)}</div>
+            <div class="crop-unit">${escHtml(p.unit)}</div>
+          </div>
+          <div class="crop-right">
+            <div class="crop-price">UGX ${Number(p.price).toLocaleString()}</div>
+            <div class="crop-avail">${counts[i]} listing${counts[i] !== 1 ? 's' : ''}</div>
+          </div>
+          <span class="crop-arrow">&#8250;</span>
         </div>`).join('');
       document.getElementById('price-search').value = '';
       filterPrices('');
@@ -641,8 +699,8 @@
       ]);
       const listings = [...await vRes.json(), ...await cRes.json()];
       if (!listings.length) {
-        el.innerHTML = `<div class="empty">No ${escHtml(crop)} listings available right now.</div>
-          <button class="btn secondary" onclick="marketplaceBack()" style="margin-top:12px;">Back to Prices</button>`;
+        el.innerHTML = `<div class="empty"><div style="font-size:48px;margin-bottom:8px;">${getCropEmoji(crop)}</div>No ${escHtml(crop)} listings available right now.</div>
+          <button class="btn secondary" onclick="marketplaceBack()" style="margin-top:12px;border-radius:10px;">Back to Prices</button>`;
         return;
       }
       const extras = await Promise.all(listings.map(async l => {
@@ -658,16 +716,18 @@
         const tierColor = rep.tier === 'TRUSTED' ? '#2e7d32' : rep.tier === 'ACTIVE' ? '#1565c0' : '#f57c00';
         const tierBg = rep.tier === 'TRUSTED' ? '#e8f5e9' : rep.tier === 'ACTIVE' ? '#e3f2fd' : '#fff3e0';
         const mktLabel = l.type === 'CITY' ? 'Wholesale' : 'Farm Gate';
+        const mktColor = l.type === 'CITY' ? '#1565c0' : '#2e7d32';
+        const stars = rep.sales > 0 ? '&#9733;'.repeat(Math.round(rep.avg)) + '&#9734;'.repeat(5 - Math.round(rep.avg)) : '';
         return `
-        <div class="listing" onclick="openListingDetail('${escHtml(l.id)}')" style="cursor:pointer;">
-          <div class="detail">${escHtml(l.detail)}</div>
-          <div class="location">&#128205; ${escHtml(l.location)} &middot; <span style="font-size:12px;color:#888;">${mktLabel}</span></div>
-          <div style="background:${tierBg};border:1px solid ${tierColor}33;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:13px;color:${tierColor};">
-            <strong>${escHtml(rep.label)}</strong>
-            ${rep.sales > 0 ? ' &middot; ' + rep.avg + '/5 from ' + rep.sales + ' buyer(s)' : ' &middot; No reviews yet'}
+        <div class="listing-card" onclick="openListingDetail('${escHtml(l.id)}')">
+          <div class="lc-title">${getCropEmoji(crop)} ${escHtml(l.detail)}</div>
+          <div class="lc-location">&#128205; ${escHtml(l.location)}</div>
+          <div class="lc-meta">
+            <span class="lc-tag" style="background:${mktColor}18;color:${mktColor};">${mktLabel}</span>
+            <span class="lc-tag" style="background:${tierBg};color:${tierColor};">${escHtml(rep.label)}</span>
+            ${v && v.verified ? `<span class="lc-tag" style="background:#e8f5e9;color:#2e7d32;">&#9989; Grade ${escHtml(v.grade)}</span>` : ''}
           </div>
-          ${v && v.verified ? `<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:8px 12px;margin-top:6px;font-size:12px;">
-            &#9989; Agent Verified — Grade <strong>${escHtml(v.grade)}</strong>${v.geo ? ' &middot; &#128205; GPS' : ''}</div>` : ''}
+          ${rep.sales > 0 ? `<div style="margin-top:8px;font-size:13px;color:#f5a623;">${stars} <span style="color:#888;">${rep.avg}/5 (${rep.sales})</span></div>` : ''}
         </div>`;
       }).join('');
     } catch (e) {
@@ -690,59 +750,74 @@
     const tierColor = rep.tier === 'TRUSTED' ? '#2e7d32' : rep.tier === 'ACTIVE' ? '#1565c0' : '#f57c00';
     const tierBg = rep.tier === 'TRUSTED' ? '#e8f5e9' : rep.tier === 'ACTIVE' ? '#e3f2fd' : '#fff3e0';
 
+    const mktLabel = l.type === 'CITY' ? 'Wholesale' : 'Farm Gate';
+    const mktColor = l.type === 'CITY' ? '#1565c0' : '#2e7d32';
+    const detailCrop = l.detail.split(/\s/)[0] || '';
+    const stars = rep.sales > 0 ? '&#9733;'.repeat(Math.round(rep.avg)) + '&#9734;'.repeat(5 - Math.round(rep.avg)) : '';
+
     const verificationReport = (v && v.verified) ? `
-      <div class="card" style="border-left:4px solid #2e7d32;">
-        <h3 style="color:#2e7d32;margin-bottom:10px;">Agent Verification Report</h3>
-        <div style="font-size:14px;line-height:1.8;">
-          <strong>Grade:</strong> <span style="font-size:18px;font-weight:bold;">${escHtml(v.grade)}</span><br>
-          <strong>Verified:</strong> ${escHtml(new Date(v.verified_at).toLocaleString())}<br>
-          <strong>GPS:</strong> ${v.geo ? v.geo.lat.toFixed(4) + ', ' + v.geo.lng.toFixed(4) : 'Not captured'}<br>
-          <strong>Farmer Area:</strong> ${escHtml(v.farmer_parish || 'Unknown')}<br>
-          ${v.notes ? '<strong>Notes:</strong> ' + escHtml(v.notes) + '<br>' : ''}
-          <strong>Checklist:</strong><br>
-          ${Object.entries(v.checklist).map(([k, val]) =>
-            '&nbsp;&nbsp;' + (val ? '&#9989;' : '&#10060;') + ' ' + escHtml(k)
-          ).join('<br>')}
+      <div class="card" style="border-left:4px solid #2e7d32;border-radius:12px;">
+        <h3 style="color:#2e7d32;margin-bottom:12px;">&#9989; Agent Verification Report</h3>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+          <span style="font-size:36px;font-weight:bold;color:#2e7d32;background:#e8f5e9;width:56px;height:56px;display:flex;align-items:center;justify-content:center;border-radius:12px;">${escHtml(v.grade)}</span>
+          <div>
+            <div style="font-weight:bold;font-size:14px;">Grade ${escHtml(v.grade)}</div>
+            <div style="font-size:12px;color:#888;">${escHtml(new Date(v.verified_at).toLocaleString())}</div>
+            ${v.geo ? `<div style="font-size:12px;color:#888;">&#128205; GPS: ${v.geo.lat.toFixed(4)}, ${v.geo.lng.toFixed(4)}</div>` : ''}
+          </div>
         </div>
+        <div style="font-size:13px;line-height:2;">
+          ${Object.entries(v.checklist).map(([k, val]) =>
+            `<div style="display:flex;align-items:center;gap:8px;">${val ? '&#9989;' : '&#10060;'} ${escHtml(k)}</div>`
+          ).join('')}
+        </div>
+        ${v.notes ? `<div style="margin-top:10px;padding:10px 12px;background:#f5f5f5;border-radius:8px;font-size:13px;color:#555;"><strong>Notes:</strong> ${escHtml(v.notes)}</div>` : ''}
       </div>` : `
-      <div class="card" style="border-left:4px solid #f57c00;">
-        <p style="color:#f57c00;font-size:14px;">This listing has not been verified by a field agent yet.</p>
+      <div class="card" style="border-left:4px solid #f57c00;border-radius:12px;">
+        <p style="color:#f57c00;font-size:14px;">&#9888; This listing has not been verified by a field agent yet.</p>
       </div>`;
 
     el.innerHTML = `
-      <div class="card">
-        <h3 style="margin-bottom:10px;">${escHtml(l.detail)}</h3>
-        <div style="font-size:14px;color:#555;line-height:1.8;">
-          &#128205; <strong>Location:</strong> ${escHtml(l.location)}<br>
-          &#128230; <strong>Type:</strong> ${l.type === 'CITY' ? 'Wholesale' : 'Farm Gate'}<br>
-          &#128197; <strong>Listed:</strong> ${escHtml(l.time)}
+      <div class="card" style="border-radius:12px;overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+          <span style="font-size:40px;width:56px;height:56px;display:flex;align-items:center;justify-content:center;background:#f0f7f0;border-radius:12px;">${getCropEmoji(detailCrop)}</span>
+          <div style="flex:1;">
+            <h3 style="margin:0 0 4px;font-size:18px;">${escHtml(l.detail)}</h3>
+            <div style="font-size:13px;color:#666;">&#128205; ${escHtml(l.location)}</div>
+          </div>
         </div>
-        <div style="background:${tierBg};border:1px solid ${tierColor}33;border-radius:8px;padding:8px 12px;margin-top:10px;font-size:13px;color:${tierColor};">
-          <strong>${escHtml(rep.label)}</strong>
-          ${rep.sales > 0 ? ' &middot; ' + rep.avg + '/5 from ' + rep.sales + ' review(s)' : ' &middot; No reviews yet'}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+          <span class="lc-tag" style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:bold;background:${mktColor}18;color:${mktColor};">${mktLabel}</span>
+          <span class="lc-tag" style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:bold;background:${tierBg};color:${tierColor};">${escHtml(rep.label)}</span>
+        </div>
+        <div style="display:flex;gap:16px;padding:12px;background:#f9f9f9;border-radius:10px;font-size:13px;color:#555;">
+          <div>&#128197; ${escHtml(l.time)}</div>
+          ${rep.sales > 0 ? `<div style="color:#f5a623;">${stars} <span style="color:#888;">${rep.avg}/5 (${rep.sales})</span></div>` : '<div style="color:#999;">No reviews yet</div>'}
         </div>
       </div>
       ${verificationReport}
-      ${l.video ? `<div class="card"><h3 style="margin-bottom:10px;">Evidence</h3><video src="/uploads/${escHtml(l.video)}" controls style="width:100%;border-radius:6px;"></video></div>` : ''}
+      ${l.video ? `<div class="card" style="border-radius:12px;"><h3 style="margin-bottom:10px;">&#127909; Evidence Video</h3><video src="/uploads/${escHtml(l.video)}" controls style="width:100%;border-radius:8px;"></video></div>` : ''}
       ${buyerLoggedIn ? `
-        <div class="card" style="text-align:center;">
-          <a href="tel:${escHtml(l.phone)}" class="btn" style="display:block;text-decoration:none;">&#128222; Call Farmer: ${escHtml(l.phone)}</a>
+        <div class="card" style="text-align:center;border-radius:12px;">
+          <a href="tel:${escHtml(l.phone)}" class="btn" style="display:block;text-decoration:none;border-radius:10px;font-size:17px;">&#128222; Call Farmer</a>
+          <div style="font-size:12px;color:#888;margin-top:6px;">${escHtml(l.phone)}</div>
         </div>
-        <div class="card">
-          <h3 style="margin-bottom:12px;">Leave a Review</h3>
+        <div class="card" style="border-radius:12px;">
+          <h3 style="margin-bottom:12px;">&#11088; Leave a Review</h3>
           <label>Rating</label>
-          <div id="review-stars" style="font-size:28px;cursor:pointer;margin-bottom:10px;">
-            ${[1,2,3,4,5].map(n => `<span onclick="setReviewRating(${n})" data-star="${n}" style="color:#ccc;">&#9733;</span>`).join('')}
+          <div id="review-stars" style="font-size:32px;cursor:pointer;margin-bottom:10px;">
+            ${[1,2,3,4,5].map(n => `<span onclick="setReviewRating(${n})" data-star="${n}" style="color:#ddd;transition:color 0.15s;">&#9733;</span>`).join('')}
           </div>
           <input type="hidden" id="review-rating" value="0">
           <label>Comment (optional)</label>
-          <input type="text" id="review-comment" placeholder="e.g. Good quality produce">
+          <input type="text" id="review-comment" placeholder="e.g. Good quality produce" style="border-radius:10px;">
           <div id="review-alert" class="alert" style="display:none;"></div>
-          <button class="btn" onclick="submitReview('${escHtml(l.id)}', '${escHtml(l.phone)}')" style="margin-top:8px;">Submit Review</button>
+          <button class="btn" onclick="submitReview('${escHtml(l.id)}', '${escHtml(l.phone)}')" style="margin-top:8px;border-radius:10px;">Submit Review</button>
         </div>` : `
-        <div class="card" style="text-align:center;">
-          <p style="font-size:14px;color:#555;margin-bottom:10px;">Want to contact this farmer or leave a review?</p>
-          <button class="btn" onclick="showMktAuth()" style="margin-top:4px;">Login / Register to Buy</button>
+        <div class="card" style="text-align:center;border-radius:12px;padding:24px;">
+          <div style="font-size:40px;margin-bottom:8px;">&#128274;</div>
+          <p style="font-size:15px;color:#555;margin-bottom:14px;">Login to contact this farmer or leave a review</p>
+          <button class="btn" onclick="showMktAuth()" style="border-radius:10px;">Login / Register</button>
         </div>`}`;
   }
 
