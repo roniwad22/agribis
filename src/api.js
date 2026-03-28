@@ -168,8 +168,11 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         const { phone, pin } = req.body;
         if (!phone || !pin) return res.status(400).json({ error: 'phone and pin required' });
         const buyer = authenticateBuyer(phone, pin);
-        if (!buyer) return res.status(403).json({ error: 'Invalid credentials' });
-        res.json({ success: true, buyer: { phone: buyer.phone, name: buyer.name } });
+        if (buyer) return res.json({ success: true, buyer: { phone: buyer.phone, name: buyer.name } });
+        // Fall back to farmer profile with PIN (unified identity)
+        const farmer = authenticateProfile(phone, pin);
+        if (farmer) return res.json({ success: true, buyer: { phone: farmer.phone, name: farmer.name } });
+        return res.status(403).json({ error: 'Invalid credentials' });
     });
 
     // ==========================================
@@ -198,12 +201,14 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     });
 
     // GET /api/listings/active?type=VILLAGE|CITY  (credentials via x-phone/x-pin headers or query params)
+    // Accepts buyer OR farmer-with-PIN credentials (unified identity)
     router.get('/listings/active', (req, res) => {
         const type = (req.query.type || 'VILLAGE').toUpperCase();
         const { phone, pin } = extractCredentials(req);
         if (phone && pin) {
             const buyer = authenticateBuyer(phone, pin);
-            if (!buyer) return res.status(403).json({ error: 'Invalid credentials' });
+            const farmer = !buyer ? authenticateProfile(phone, pin) : null;
+            if (!buyer && !farmer) return res.status(403).json({ error: 'Invalid credentials' });
         }
         res.json(getApprovedListings(type));
     });
@@ -342,9 +347,9 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     });
 
     router.post('/feedback', feedLimit, (req, res) => {
-        // Authenticate buyer — phone comes from auth, not body (prevents spoofing)
+        // Authenticate buyer or farmer-with-PIN — phone comes from auth, not body (prevents spoofing)
         const { phone, pin } = extractCredentials(req);
-        const buyer = authenticateBuyer(phone, pin);
+        const buyer = authenticateBuyer(phone, pin) || authenticateProfile(phone, pin);
         if (!buyer) return res.status(403).json({ error: 'Invalid buyer credentials' });
         const buyerPhone = buyer.phone;
 

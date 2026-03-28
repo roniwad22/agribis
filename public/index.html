@@ -209,16 +209,25 @@
       <button class="btn" onclick="loadListings()">View Listings</button>
     </div>
     <div id="buyer-register-form" class="card" style="display:none;">
-      <label>Phone Number</label>
-      <input type="tel" id="buyer-reg-phone" placeholder="+256 7XX XXX XXX">
-      <label>Your Name</label>
-      <input type="text" id="buyer-reg-name" placeholder="e.g. Nakato Jane">
-      <label>Create PIN (4 digits)</label>
-      <input type="password" id="buyer-reg-pin" placeholder="4-digit PIN" maxlength="4">
-      <label>Confirm PIN</label>
-      <input type="password" id="buyer-reg-confirm" placeholder="Re-enter PIN" maxlength="4">
-      <div id="buyer-reg-alert" class="alert" style="display:none;"></div>
-      <button class="btn secondary" onclick="buyerRegister()">Register</button>
+      <div id="buyer-reg-fields">
+        <label>Phone Number</label>
+        <input type="tel" id="buyer-reg-phone" placeholder="+256 7XX XXX XXX">
+        <label>Your Name</label>
+        <input type="text" id="buyer-reg-name" placeholder="e.g. Nakato Jane">
+        <label>Create PIN (4 digits)</label>
+        <input type="password" id="buyer-reg-pin" placeholder="4-digit PIN" maxlength="4">
+        <label>Confirm PIN</label>
+        <input type="password" id="buyer-reg-confirm" placeholder="Re-enter PIN" maxlength="4">
+        <div id="buyer-reg-alert" class="alert" style="display:none;"></div>
+        <button class="btn secondary" onclick="buyerRegister()">Register</button>
+      </div>
+      <div id="buyer-otp-fields" style="display:none;">
+        <label>Verification Code</label>
+        <input type="text" id="buyer-reg-otp" placeholder="e.g. 123456" maxlength="6" inputmode="numeric">
+        <div id="buyer-otp-alert" class="alert" style="display:none;"></div>
+        <button class="btn secondary" onclick="buyerVerifyOtp()">Verify</button>
+      </div>
+      <p style="font-size:13px;color:#888;margin-top:12px;">Already a registered farmer? Just use your farmer phone + PIN to log in above — no separate buyer registration needed.</p>
     </div>
     <div id="buyer-results"></div>
   </div>
@@ -508,6 +517,7 @@
     document.getElementById('buyer-register-form').style.display = tab === 'register' ? '' : 'none';
   }
 
+  let _buyerRegPhone = '';
   async function buyerRegister() {
     const phone = document.getElementById('buyer-reg-phone').value.trim();
     const name = document.getElementById('buyer-reg-name').value.trim();
@@ -524,10 +534,36 @@
       });
       const data = await res.json();
       if (res.ok) {
-        showAlert(alertEl, 'success', 'Registered! Switch to Login tab.');
-        document.getElementById('buyer-phone').value = phone;
+        _buyerRegPhone = phone;
+        document.getElementById('buyer-reg-fields').style.display = 'none';
+        document.getElementById('buyer-otp-fields').style.display = '';
+        if (data.code) {
+          document.getElementById('buyer-reg-otp').value = data.code;
+          showAlert(document.getElementById('buyer-otp-alert'), 'success', 'Sandbox — code auto-filled. Click Verify.');
+        } else {
+          showAlert(document.getElementById('buyer-otp-alert'), 'success', 'OTP sent to your phone.');
+        }
       } else {
         showAlert(alertEl, 'error', data.error || 'Registration failed.');
+      }
+    } catch (e) { showAlert(alertEl, 'error', 'Connection error.'); }
+  }
+
+  async function buyerVerifyOtp() {
+    const code = document.getElementById('buyer-reg-otp').value.trim();
+    const alertEl = document.getElementById('buyer-otp-alert');
+    if (!code) { showAlert(alertEl, 'error', 'Enter the code.'); return; }
+    try {
+      const res = await fetch(`${API}/api/buyers/verify-otp`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: _buyerRegPhone, code })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert(alertEl, 'success', 'Registered! Switch to Login tab.');
+        document.getElementById('buyer-phone').value = _buyerRegPhone;
+      } else {
+        showAlert(alertEl, 'error', data.error || 'Invalid code.');
       }
     } catch (e) { showAlert(alertEl, 'error', 'Connection error.'); }
   }
