@@ -74,7 +74,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     const authLimit   = limiter.middleware(req => `auth:${req.headers['x-phone'] || req.body?.phone || req.query?.phone || req.ip}`, 5, 15 * 60 * 1000);  // 5 per 15min
     const regLimit    = limiter.middleware(req => `reg:${req.ip}`, 3, 60 * 60 * 1000);    // 3 per hour
     const listLimit   = limiter.middleware(req => `list:${req.body?.phone || req.ip}`, 10, 60 * 60 * 1000);   // 10 per hour
-    const feedLimit   = limiter.middleware(req => `feed:${req.body?.buyer_phone || req.ip}`, 10, 60 * 60 * 1000); // 10 per hour
+    const feedLimit   = limiter.middleware(req => `feed:${req.headers['x-phone'] || req.query?.phone || req.ip}`, 10, 60 * 60 * 1000); // 10 per hour
     const generalLimit = limiter.middleware(req => `gen:${req.ip}`, 60, 60 * 1000);       // 60 per min
 
     // Apply general rate limit to all API routes
@@ -296,11 +296,17 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     });
 
     router.post('/feedback', feedLimit, (req, res) => {
-        const { listing_id, farmer_phone, buyer_phone, rating } = req.body;
+        // Authenticate buyer — phone comes from auth, not body (prevents spoofing)
+        const { phone, pin } = extractCredentials(req);
+        const buyer = authenticateBuyer(phone, pin);
+        if (!buyer) return res.status(403).json({ error: 'Invalid buyer credentials' });
+        const buyerPhone = buyer.phone;
+
+        const { listing_id, farmer_phone, rating } = req.body;
         if (!listing_id) return res.status(400).json({ error: 'listing_id required — rate a specific listing' });
-        if (!farmer_phone || !buyer_phone || !rating) return res.status(400).json({ error: 'farmer_phone, buyer_phone, rating required' });
+        if (!farmer_phone || !rating) return res.status(400).json({ error: 'farmer_phone, rating required' });
         if (rating < 1 || rating > 5) return res.status(400).json({ error: 'Rating must be 1-5' });
-        const result = addFeedback(listing_id, farmer_phone, buyer_phone, rating, req.body.comment || '');
+        const result = addFeedback(listing_id, farmer_phone, buyerPhone, rating, req.body.comment || '');
         if (result.error) return res.status(400).json({ error: result.error });
         const rep = getFarmerReputation(farmer_phone);
         res.json({ success: true, reputation: rep });

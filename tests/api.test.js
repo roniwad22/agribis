@@ -522,74 +522,108 @@ describe('GET /api/reputation/:phone', () => {
 });
 
 describe('POST /api/feedback', () => {
-    it('creates feedback with valid listing_id', async () => {
+    const BUYER = '+256700000077';
+    const BUYER_PIN = '5555';
+    const buyerAuth = { 'x-phone': BUYER, 'x-pin': BUYER_PIN };
+
+    it('creates feedback with valid listing_id and buyer auth', async () => {
         const { app, helpers } = makeApp();
+        setupBuyer(helpers, BUYER, BUYER_PIN);
         helpers.addListing({ id: 'fb0', time: new Date().toISOString(), phone: '+256700000010', detail: 'Maize 50kg', location: 'A', type: 'VILLAGE', status: '[APPROVED]' });
         const res = await req(app, 'post', '/api/feedback', {
-            listing_id: 'fb0', farmer_phone: '+256700000010', buyer_phone: '+256700000077', rating: 5, comment: 'Great'
-        });
+            listing_id: 'fb0', farmer_phone: '+256700000010', rating: 5, comment: 'Great'
+        }, buyerAuth);
         assert.equal(res.status, 200);
         assert.ok(res.body.success);
         assert.equal(res.body.reputation.sales, 1);
     });
 
-    it('rejects feedback without listing_id', async () => {
-        const { app } = makeApp();
+    it('rejects feedback without buyer auth', async () => {
+        const { app, helpers } = makeApp();
+        helpers.addListing({ id: 'fb-noauth', time: new Date().toISOString(), phone: '+256700000010', detail: 'Maize', location: 'A', type: 'VILLAGE', status: '[APPROVED]' });
         const res = await req(app, 'post', '/api/feedback', {
-            farmer_phone: '+256700000010', buyer_phone: '+256700000077', rating: 5
+            listing_id: 'fb-noauth', farmer_phone: '+256700000010', rating: 5
         });
+        assert.equal(res.status, 403);
+        assert.match(res.body.error, /invalid buyer credentials/i);
+    });
+
+    it('ignores buyer_phone in body — uses authenticated phone', async () => {
+        const { app, helpers } = makeApp();
+        setupBuyer(helpers, BUYER, BUYER_PIN);
+        helpers.addListing({ id: 'fb-spoof', time: new Date().toISOString(), phone: '+256700000010', detail: 'Maize', location: 'A', type: 'VILLAGE', status: '[APPROVED]' });
+        const res = await req(app, 'post', '/api/feedback', {
+            listing_id: 'fb-spoof', farmer_phone: '+256700000010', buyer_phone: '+256700099999', rating: 5
+        }, buyerAuth);
+        assert.equal(res.status, 200);
+        // The feedback was recorded under the authenticated buyer phone, not the spoofed one
+        const rep = helpers.getFarmerReputation('+256700000010');
+        assert.equal(rep.sales, 1);
+    });
+
+    it('rejects feedback without listing_id', async () => {
+        const { app, helpers } = makeApp();
+        setupBuyer(helpers, BUYER, BUYER_PIN);
+        const res = await req(app, 'post', '/api/feedback', {
+            farmer_phone: '+256700000010', rating: 5
+        }, buyerAuth);
         assert.equal(res.status, 400);
         assert.match(res.body.error, /listing_id required/i);
     });
 
     it('rejects duplicate rating (same buyer + listing)', async () => {
         const { app, helpers } = makeApp();
+        setupBuyer(helpers, BUYER, BUYER_PIN);
         helpers.addListing({ id: 'fb-dup', time: new Date().toISOString(), phone: '+256700000010', detail: 'Beans', location: 'A', type: 'VILLAGE', status: '[APPROVED]' });
         await req(app, 'post', '/api/feedback', {
-            listing_id: 'fb-dup', farmer_phone: '+256700000010', buyer_phone: '+256700000077', rating: 5
-        });
+            listing_id: 'fb-dup', farmer_phone: '+256700000010', rating: 5
+        }, buyerAuth);
         const res = await req(app, 'post', '/api/feedback', {
-            listing_id: 'fb-dup', farmer_phone: '+256700000010', buyer_phone: '+256700000077', rating: 1
-        });
+            listing_id: 'fb-dup', farmer_phone: '+256700000010', rating: 1
+        }, buyerAuth);
         assert.equal(res.status, 400);
         assert.match(res.body.error, /already rated/i);
     });
 
     it('rejects rating after 7-day window', async () => {
         const { app, helpers } = makeApp();
+        setupBuyer(helpers, BUYER, BUYER_PIN);
         const oldDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
         helpers.addListing({ id: 'fb-old', time: oldDate, phone: '+256700000010', detail: 'Rice', location: 'A', type: 'VILLAGE', status: '[APPROVED]' });
         const res = await req(app, 'post', '/api/feedback', {
-            listing_id: 'fb-old', farmer_phone: '+256700000010', buyer_phone: '+256700000077', rating: 4
-        });
+            listing_id: 'fb-old', farmer_phone: '+256700000010', rating: 4
+        }, buyerAuth);
         assert.equal(res.status, 400);
         assert.match(res.body.error, /window closed/i);
     });
 
     it('cascades strike to verifying agent on bad rating', async () => {
         const { app, helpers } = makeApp();
+        setupBuyer(helpers, BUYER, BUYER_PIN);
         helpers.addListing({ id: 'fb1', time: new Date().toISOString(), phone: '+256700000010', detail: 'Maize', location: 'A', type: 'VILLAGE', status: '[APPROVED]' });
         helpers.setVerification('fb1', { agent_phone: '+256700000099' });
         const res = await req(app, 'post', '/api/feedback', {
-            listing_id: 'fb1', farmer_phone: '+256700000010', buyer_phone: '+256700000077', rating: 1, comment: 'Scam'
-        });
+            listing_id: 'fb1', farmer_phone: '+256700000010', rating: 1, comment: 'Scam'
+        }, buyerAuth);
         assert.equal(res.status, 200);
         const record = helpers.getAgentRecord('+256700000099');
         assert.equal(record.strikes, 1);
     });
 
     it('rejects missing required fields', async () => {
-        const { app } = makeApp();
-        const res = await req(app, 'post', '/api/feedback', { listing_id: 'x', rating: 5 });
+        const { app, helpers } = makeApp();
+        setupBuyer(helpers, BUYER, BUYER_PIN);
+        const res = await req(app, 'post', '/api/feedback', { listing_id: 'x', rating: 5 }, buyerAuth);
         assert.equal(res.status, 400);
     });
 
     it('rejects invalid rating', async () => {
         const { app, helpers } = makeApp();
+        setupBuyer(helpers, BUYER, BUYER_PIN);
         helpers.addListing({ id: 'fb-inv', time: new Date().toISOString(), phone: '+256700000010', detail: 'X', location: 'A', type: 'VILLAGE', status: '[APPROVED]' });
         const res = await req(app, 'post', '/api/feedback', {
-            listing_id: 'fb-inv', farmer_phone: '+256700000010', buyer_phone: '+256700000077', rating: 10
-        });
+            listing_id: 'fb-inv', farmer_phone: '+256700000010', rating: 10
+        }, buyerAuth);
         assert.equal(res.status, 400);
     });
 });
@@ -771,6 +805,10 @@ describe('Rate limiting', () => {
     it('blocks feedback spam', async () => {
         const limiter = createRateLimiter();
         const { app, helpers } = makeApp({ limiter });
+        const BUYER = '+256700000077';
+        const BUYER_PIN = '5555';
+        setupBuyer(helpers, BUYER, BUYER_PIN);
+        const buyerAuth = { 'x-phone': BUYER, 'x-pin': BUYER_PIN };
         const now = new Date().toISOString();
         // Create 11 listings to rate
         for (let i = 0; i < 11; i++) {
@@ -779,13 +817,13 @@ describe('Rate limiting', () => {
         // 10 valid ratings (general limit might interfere, so we check the 11th)
         for (let i = 0; i < 10; i++) {
             await req(app, 'post', '/api/feedback', {
-                listing_id: `rl${i}`, farmer_phone: '+256700000010', buyer_phone: '+256700000077', rating: 5
-            });
+                listing_id: `rl${i}`, farmer_phone: '+256700000010', rating: 5
+            }, buyerAuth);
         }
         // 11th should be rate limited
         const res = await req(app, 'post', '/api/feedback', {
-            listing_id: 'rl10', farmer_phone: '+256700000010', buyer_phone: '+256700000077', rating: 5
-        });
+            listing_id: 'rl10', farmer_phone: '+256700000010', rating: 5
+        }, buyerAuth);
         assert.equal(res.status, 429);
     });
 });
