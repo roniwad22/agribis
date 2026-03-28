@@ -70,6 +70,9 @@ function createDb(dbPath) {
     try { db.exec('ALTER TABLE prices ADD COLUMN unit TEXT DEFAULT \'per kg\''); } catch (_) {}
     try { db.exec('ALTER TABLE listings ADD COLUMN verification TEXT'); } catch (_) {}
     try { db.exec('ALTER TABLE profiles ADD COLUMN pin_hash TEXT'); } catch (_) {}
+    try { db.exec('ALTER TABLE listings ADD COLUMN asking_price INTEGER'); } catch (_) {}
+    try { db.exec('ALTER TABLE listings ADD COLUMN price_unit TEXT'); } catch (_) {}
+    try { db.exec('ALTER TABLE listings ADD COLUMN stock TEXT'); } catch (_) {}
     // Fix units for crops that aren't sold per kg
     try { db.exec("UPDATE prices SET unit = 'per bunch' WHERE crop = 'Matooke' AND unit = 'per kg'"); } catch (_) {}
     db.exec(`
@@ -82,7 +85,10 @@ function createDb(dbPath) {
         type TEXT,
         status TEXT,
         video TEXT,
-        verification TEXT
+        verification TEXT,
+        asking_price INTEGER,
+        price_unit TEXT,
+        stock TEXT
       );
       CREATE TABLE IF NOT EXISTS profiles (
         phone TEXT PRIMARY KEY,
@@ -210,8 +216,9 @@ function createHelpers(db) {
             return profile;
         },
         addListing(listing) {
-            db.prepare('INSERT INTO listings (id,time,phone,detail,location,type,status) VALUES (?,?,?,?,?,?,?)')
-              .run(listing.id, listing.time, listing.phone, listing.detail, listing.location, listing.type, listing.status);
+            db.prepare('INSERT INTO listings (id,time,phone,detail,location,type,status,asking_price,price_unit,stock) VALUES (?,?,?,?,?,?,?,?,?,?)')
+              .run(listing.id, listing.time, listing.phone, listing.detail, listing.location, listing.type, listing.status,
+                   listing.asking_price || null, listing.price_unit || null, listing.stock || null);
         },
         getApprovedListings(type, crop) {
             if (crop) {
@@ -422,6 +429,16 @@ function createHelpers(db) {
                     }
                 }
             })();
+        },
+        getPriceRanges() {
+            return db.prepare(`
+                SELECT LOWER(SUBSTR(detail, 1, INSTR(detail || ' ', ' ') - 1)) as crop, type,
+                       MIN(asking_price) as min_price, MAX(asking_price) as max_price,
+                       COUNT(*) as count
+                FROM listings
+                WHERE status = '[APPROVED]' AND asking_price IS NOT NULL AND asking_price > 0
+                GROUP BY crop, type
+            `).all();
         }
     };
     return helpers;
@@ -452,6 +469,20 @@ function createApp(db, sms, opts) {
     const { getProfile, saveProfile, addListing, getListing, getApprovedListings, getAllListings, updateListingStatus, getVerification, getPrices, getPricesMap, setPrices, getAllAgents, setAgentStatus } = helpers;
 
     app.use('/api', createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts));
+
+    // ==========================================
+    // USSD HELPERS
+    // ==========================================
+    function deriveUnit(detail) {
+        const d = detail.toLowerCase();
+        if (d.includes('bunch')) return 'per bunch';
+        if (d.includes('basin')) return 'per basin';
+        if (d.includes('tin')) return 'per tin';
+        if (d.includes('bag')) return 'per bag';
+        if (d.includes('sack')) return 'per sack';
+        if (d.includes('crate')) return 'per crate';
+        return 'per kg';
+    }
 
     // ==========================================
     // USSD ENDPOINT
@@ -518,16 +549,36 @@ Enter Name-Parish-District
                 response = `CON Listing from ${profile.parish}:
 Enter Crop & Qty (e.g. Maize 50kg):`;
             }
-            // Submit listing — handles returning user (parts.length=3) and
-            // newly-registered user in same session (parts.length=4)
+            // After crop entered — ask for price
+            // Returning user: parts.length=3, new user: parts.length=4
             else if (parts[0] === "1" && profile &&
                      parts[parts.length - 2] === "1" &&
                      (parts.length === 3 || parts.length === 4)) {
                 const detail = parts[parts.length - 1];
+                const unit = deriveUnit(detail);
+                response = `CON Your price ${unit}? (UGX)
+e.g. 1200`;
+            }
+            // After price entered — ask for total stock
+            // Returning user: parts.length=4, new user: parts.length=5
+            else if (parts[0] === "1" && profile &&
+                     parts[parts.length - 3] === "1" &&
+                     (parts.length === 4 || parts.length === 5)) {
+                response = `CON Total stock available?
+(e.g. 500kg)`;
+            }
+            // After stock entered — submit listing
+            // Returning user: parts.length=5, new user: parts.length=6
+            else if (parts[0] === "1" && profile &&
+                     parts[parts.length - 4] === "1" &&
+                     (parts.length === 5 || parts.length === 6)) {
+                const detail = parts[parts.length - 3];
+                const askingPrice = parseInt(parts[parts.length - 2]) || null;
+                const stock = parts[parts.length - 1];
+                const priceUnit = deriveUnit(detail);
                 let quantityMatch = detail.match(/\d+/);
                 let quantityAmount = quantityMatch ? parseInt(quantityMatch[0]) : 999;
 
-                // ALL listings go live immediately — agents verify, not gate
                 const status = "[APPROVED]";
                 const needsVerify = quantityAmount >= 100;
 
@@ -538,10 +589,14 @@ Enter Crop & Qty (e.g. Maize 50kg):`;
                     detail: detail,
                     location: profile.parish,
                     type: "VILLAGE",
-                    status: status
+                    status: status,
+                    asking_price: askingPrice,
+                    price_unit: priceUnit,
+                    stock: stock
                 });
 
                 response = `END Your listing is LIVE!
+${askingPrice ? 'Price: UGX ' + Number(askingPrice).toLocaleString() + ' ' + priceUnit : ''}
 ${needsVerify ? "Large qty — a field agent will visit to verify & boost trust." : "Listed & live on the market board."}`;
             }
 
@@ -555,17 +610,38 @@ ${needsVerify ? "Large qty — a field agent will visit to verify & boost trust.
             else if (text === "2*1") {
                 response = `CON Enter Crop & Qty (e.g. Matooke 500bunches):`;
             }
+            // After crop — ask price
             else if (text.startsWith("2*1*") && parts.length === 3) {
+                const detail = parts[2];
+                const unit = deriveUnit(detail);
+                response = `CON Wholesale price ${unit}? (UGX)
+e.g. 15000`;
+            }
+            // After price — ask stock
+            else if (text.startsWith("2*1*") && parts.length === 4) {
+                response = `CON Total stock available?
+(e.g. 2000bunches)`;
+            }
+            // After stock — submit
+            else if (text.startsWith("2*1*") && parts.length === 5) {
+                const detail = parts[2];
+                const askingPrice = parseInt(parts[3]) || null;
+                const stock = parts[4];
+                const priceUnit = deriveUnit(detail);
                 addListing({
                     id: crypto.randomUUID(),
                     time: new Date().toLocaleString(),
                     phone: phoneNumber,
-                    detail: parts[2],
+                    detail: detail,
                     location: "City Market",
                     type: "CITY",
-                    status: "[APPROVED]"
+                    status: "[APPROVED]",
+                    asking_price: askingPrice,
+                    price_unit: priceUnit,
+                    stock: stock
                 });
-                response = `END Success! City wholesale stock is live.`;
+                response = `END Success! City wholesale stock is live.
+${askingPrice ? 'Price: UGX ' + Number(askingPrice).toLocaleString() + ' ' + priceUnit : ''}`;
             }
 
             // ==========================================

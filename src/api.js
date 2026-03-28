@@ -224,28 +224,34 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         res.json(getApprovedListings(type, crop));
     });
 
-    // POST /api/listings/farmer  { phone, detail }
+    // POST /api/listings/farmer  { phone, detail, asking_price?, price_unit?, stock? }
     router.post('/listings/farmer', listLimit, (req, res) => {
-        const { phone, detail } = req.body;
+        const { phone, detail, asking_price, price_unit, stock } = req.body;
         if (!phone || !detail) return res.status(400).json({ error: 'phone and detail are required' });
         const profile = getProfile(phone);
         if (!profile) return res.status(404).json({ error: 'Profile not found. Please register first.' });
         const status = '[APPROVED]';
         const listing = {
             id: crypto.randomUUID(), time: new Date().toLocaleString(),
-            phone, detail, location: profile.parish, type: 'VILLAGE', status
+            phone, detail, location: profile.parish, type: 'VILLAGE', status,
+            asking_price: asking_price ? parseInt(asking_price) : null,
+            price_unit: price_unit || null,
+            stock: stock || null
         };
         addListing(listing);
         res.json({ success: true, status });
     });
 
-    // POST /api/listings/broker  { phone, detail }
+    // POST /api/listings/broker  { phone, detail, asking_price?, price_unit?, stock? }
     router.post('/listings/broker', listLimit, (req, res) => {
-        const { phone, detail } = req.body;
+        const { phone, detail, asking_price, price_unit, stock } = req.body;
         if (!phone || !detail) return res.status(400).json({ error: 'phone and detail are required' });
         addListing({
             id: crypto.randomUUID(), time: new Date().toLocaleString(),
-            phone, detail, location: 'City Market', type: 'CITY', status: '[APPROVED]'
+            phone, detail, location: 'City Market', type: 'CITY', status: '[APPROVED]',
+            asking_price: asking_price ? parseInt(asking_price) : null,
+            price_unit: price_unit || null,
+            stock: stock || null
         });
         res.json({ success: true, status: '[APPROVED]' });
     });
@@ -273,6 +279,12 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     // ==========================================
     router.get('/prices', (req, res) => {
         res.json(getPrices());
+    });
+
+    // GET /api/prices/ranges — price ranges from actual listings by market type
+    router.get('/prices/ranges', (req, res) => {
+        const ranges = helpers.getPriceRanges ? helpers.getPriceRanges() : [];
+        res.json(ranges);
     });
 
     router.put('/prices', (req, res) => {

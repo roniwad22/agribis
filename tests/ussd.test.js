@@ -106,19 +106,36 @@ describe('USSD endpoint', () => {
             assert.ok(res.includes('Crop & Qty'));
         });
 
-        it('approves listing for small quantity immediately', async () => {
+        it('prompts for price after crop entry', async () => {
             helpers.saveProfile('+256700000001', 'Kato', 'Kibibi', 'Mityana');
             const res = await postUssd(app, { phoneNumber: '+256700000001', text: '1*1*Maize 50kg' });
+            assert.ok(res.startsWith('CON'));
+            assert.ok(res.includes('price'));
+        });
+
+        it('prompts for stock after price entry', async () => {
+            helpers.saveProfile('+256700000001', 'Kato', 'Kibibi', 'Mityana');
+            const res = await postUssd(app, { phoneNumber: '+256700000001', text: '1*1*Maize 50kg*1200' });
+            assert.ok(res.startsWith('CON'));
+            assert.ok(res.includes('stock'));
+        });
+
+        it('approves listing for small quantity immediately', async () => {
+            helpers.saveProfile('+256700000001', 'Kato', 'Kibibi', 'Mityana');
+            const res = await postUssd(app, { phoneNumber: '+256700000001', text: '1*1*Maize 50kg*1200*500kg' });
             assert.ok(res.startsWith('END'));
             assert.ok(res.includes('LIVE'));
             const listings = helpers.getAllListings();
             assert.equal(listings.length, 1);
             assert.equal(listings[0].status, '[APPROVED]');
+            assert.equal(listings[0].asking_price, 1200);
+            assert.equal(listings[0].price_unit, 'per kg');
+            assert.equal(listings[0].stock, '500kg');
         });
 
         it('approves large quantity and flags for verification', async () => {
             helpers.saveProfile('+256700000001', 'Kato', 'Kibibi', 'Mityana');
-            const res = await postUssd(app, { phoneNumber: '+256700000001', text: '1*1*Maize 500kg' });
+            const res = await postUssd(app, { phoneNumber: '+256700000001', text: '1*1*Maize 500kg*1200*2000kg' });
             assert.ok(res.startsWith('END'));
             assert.ok(res.includes('LIVE'));
             assert.ok(res.includes('field agent'));
@@ -128,8 +145,8 @@ describe('USSD endpoint', () => {
 
         it('generates unique listing IDs', async () => {
             helpers.saveProfile('+256700000001', 'Kato', 'Kibibi', 'Mityana');
-            await postUssd(app, { phoneNumber: '+256700000001', text: '1*1*Maize 10kg' });
-            await postUssd(app, { phoneNumber: '+256700000001', text: '1*1*Beans 20kg' });
+            await postUssd(app, { phoneNumber: '+256700000001', text: '1*1*Maize 10kg*1200*100kg' });
+            await postUssd(app, { phoneNumber: '+256700000001', text: '1*1*Beans 20kg*3500*200kg' });
             const listings = helpers.getAllListings();
             assert.equal(listings.length, 2);
             assert.notEqual(listings[0].id, listings[1].id);
@@ -154,14 +171,29 @@ describe('USSD endpoint', () => {
             assert.ok(res.includes('Crop & Qty'));
         });
 
-        it('creates city listing', async () => {
+        it('prompts for price after crop entry', async () => {
             const res = await postUssd(app, { phoneNumber: '+256700000002', text: '2*1*Matooke 500bunches' });
+            assert.ok(res.startsWith('CON'));
+            assert.ok(res.includes('price'));
+        });
+
+        it('prompts for stock after price entry', async () => {
+            const res = await postUssd(app, { phoneNumber: '+256700000002', text: '2*1*Matooke 500bunches*15000' });
+            assert.ok(res.startsWith('CON'));
+            assert.ok(res.includes('stock'));
+        });
+
+        it('creates city listing with price and stock', async () => {
+            const res = await postUssd(app, { phoneNumber: '+256700000002', text: '2*1*Matooke 500bunches*15000*2000bunches' });
             assert.ok(res.startsWith('END'));
             assert.ok(res.includes('City wholesale stock is live'));
             const listings = helpers.getAllListings();
             assert.equal(listings.length, 1);
             assert.equal(listings[0].type, 'CITY');
             assert.equal(listings[0].status, '[APPROVED]');
+            assert.equal(listings[0].asking_price, 15000);
+            assert.equal(listings[0].price_unit, 'per bunch');
+            assert.equal(listings[0].stock, '2000bunches');
         });
     });
 

@@ -201,6 +201,19 @@
       <div id="broker-alert" style="display:none;"></div>
       <label>Crop & Quantity</label>
       <input type="text" id="broker-detail" placeholder="e.g. Matooke 500 bunches">
+      <label>Wholesale Price (UGX)</label>
+      <input type="number" id="broker-price" placeholder="e.g. 15000" inputmode="numeric">
+      <label>Price Unit</label>
+      <select id="broker-unit">
+        <option value="per bunch">per bunch</option>
+        <option value="per kg">per kg</option>
+        <option value="per bag">per bag</option>
+        <option value="per tin">per tin</option>
+        <option value="per sack">per sack</option>
+        <option value="per crate">per crate</option>
+      </select>
+      <label>Total Stock Available</label>
+      <input type="text" id="broker-stock" placeholder="e.g. 2000 bunches">
       <button class="btn secondary" onclick="submitBroker()">Submit Listing</button>
     </div>
   </div>
@@ -433,6 +446,20 @@
         <h3 style="margin-bottom:16px;">List Your Produce</h3>
         <label>Crop & Quantity</label>
         <input type="text" id="list-detail" placeholder="e.g. Maize 50kg">
+        <label>Your Price (UGX)</label>
+        <input type="number" id="list-price" placeholder="e.g. 1200" inputmode="numeric">
+        <label>Price Unit</label>
+        <select id="list-unit">
+          <option value="per kg">per kg</option>
+          <option value="per bunch">per bunch</option>
+          <option value="per bag">per bag</option>
+          <option value="per tin">per tin</option>
+          <option value="per basin">per basin</option>
+          <option value="per sack">per sack</option>
+          <option value="per crate">per crate</option>
+        </select>
+        <label>Total Stock Available</label>
+        <input type="text" id="list-stock" placeholder="e.g. 500kg">
         <p style="font-size:12px; color:#888; margin-top:-10px; margin-bottom:14px;">
           Your listing goes live immediately. Large quantities may be visited by a field agent for verification.
         </p>
@@ -503,13 +530,16 @@
 
   async function submitListing() {
     const detail = document.getElementById('list-detail').value.trim();
+    const asking_price = document.getElementById('list-price').value.trim();
+    const price_unit = document.getElementById('list-unit').value;
+    const stock = document.getElementById('list-stock').value.trim();
     const alertEl = document.getElementById('list-alert');
     if (!detail) { showAlert(alertEl, 'error', 'Please enter crop and quantity.'); return; }
     try {
       const res = await fetch(`${API}/api/listings/farmer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: myPhone, detail })
+        body: JSON.stringify({ phone: myPhone, detail, asking_price: asking_price || undefined, price_unit, stock: stock || undefined })
       });
       const data = await res.json();
       if (data.status === '[APPROVED]') {
@@ -518,6 +548,8 @@
         showAlert(alertEl, 'info', 'Listed! Large quantity — pending review. We will contact you.');
       }
       document.getElementById('list-detail').value = '';
+      document.getElementById('list-price').value = '';
+      document.getElementById('list-stock').value = '';
     } catch (e) {
       showAlert(alertEl, 'error', 'Submission failed. Try again.');
     }
@@ -526,16 +558,21 @@
   // ── Broker ───────────────────────────────────────────────
   async function submitBroker() {
     const detail = document.getElementById('broker-detail').value.trim();
+    const asking_price = document.getElementById('broker-price').value.trim();
+    const price_unit = document.getElementById('broker-unit').value;
+    const stock = document.getElementById('broker-stock').value.trim();
     const alertEl = document.getElementById('broker-alert');
     if (!detail) { showAlert(alertEl, 'error', 'Please enter crop and quantity.'); return; }
     try {
       await fetch(`${API}/api/listings/broker`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: myPhone, detail })
+        body: JSON.stringify({ phone: myPhone, detail, asking_price: asking_price || undefined, price_unit, stock: stock || undefined })
       });
       showAlert(alertEl, 'success', 'City wholesale stock listed and live!');
       document.getElementById('broker-detail').value = '';
+      document.getElementById('broker-price').value = '';
+      document.getElementById('broker-stock').value = '';
     } catch (e) {
       showAlert(alertEl, 'error', 'Submission failed. Try again.');
     }
@@ -643,31 +680,56 @@
   async function loadPrices() {
     const el = document.getElementById('prices-content');
     try {
-      const res = await fetch(`${API}/api/prices`);
-      const prices = await res.json();
-      // Fetch listing counts per crop in parallel
-      const counts = await Promise.all(prices.map(async p => {
-        try {
-          const [vr, cr] = await Promise.all([
-            fetch(`${API}/api/listings/active?type=VILLAGE&crop=${encodeURIComponent(p.crop)}`).then(r => r.json()),
-            fetch(`${API}/api/listings/active?type=CITY&crop=${encodeURIComponent(p.crop)}`).then(r => r.json())
-          ]);
-          return (Array.isArray(vr) ? vr.length : 0) + (Array.isArray(cr) ? cr.length : 0);
-        } catch { return 0; }
-      }));
-      el.innerHTML = prices.map((p, i) => `
-        <div class="price-row" data-crop="${escHtml(p.crop.toLowerCase())}" onclick="openCropListings('${escHtml(p.crop)}')">
+      const [pricesRes, rangesRes, countsData] = await Promise.all([
+        fetch(`${API}/api/prices`).then(r => r.json()),
+        fetch(`${API}/api/prices/ranges`).then(r => r.json()).catch(() => []),
+        // Fetch listing counts per crop type
+        (async () => {
+          const pr = await fetch(`${API}/api/prices`).then(r => r.json());
+          return Promise.all(pr.map(async p => {
+            try {
+              const [vr, cr] = await Promise.all([
+                fetch(`${API}/api/listings/active?type=VILLAGE&crop=${encodeURIComponent(p.crop)}`).then(r => r.json()),
+                fetch(`${API}/api/listings/active?type=CITY&crop=${encodeURIComponent(p.crop)}`).then(r => r.json())
+              ]);
+              return { village: Array.isArray(vr) ? vr.length : 0, city: Array.isArray(cr) ? cr.length : 0 };
+            } catch { return { village: 0, city: 0 }; }
+          }));
+        })()
+      ]);
+      const prices = pricesRes;
+      const ranges = rangesRes;
+      // Build range lookup: { "maize": { VILLAGE: {min,max,count}, CITY: {min,max,count} } }
+      const rangeMap = {};
+      ranges.forEach(r => {
+        if (!rangeMap[r.crop]) rangeMap[r.crop] = {};
+        rangeMap[r.crop][r.type] = { min: r.min_price, max: r.max_price, count: r.count };
+      });
+      el.innerHTML = prices.map((p, i) => {
+        const cropKey = p.crop.toLowerCase();
+        const cr = rangeMap[cropKey] || {};
+        const village = cr.VILLAGE;
+        const city = cr.CITY;
+        const total = (countsData[i]?.village || 0) + (countsData[i]?.city || 0);
+        const rangeHtml = (village || city) ? `<div style="font-size:11px;margin-top:4px;line-height:1.5;">` +
+          (village ? `<span style="color:#2e7d32;">Farm: ${village.min === village.max ? 'UGX ' + Number(village.min).toLocaleString() : 'UGX ' + Number(village.min).toLocaleString() + '–' + Number(village.max).toLocaleString()}</span>` : '') +
+          (village && city ? '<br>' : '') +
+          (city ? `<span style="color:#1565c0;">Wholesale: ${city.min === city.max ? 'UGX ' + Number(city.min).toLocaleString() : 'UGX ' + Number(city.min).toLocaleString() + '–' + Number(city.max).toLocaleString()}</span>` : '') +
+          `</div>` : '';
+        return `
+        <div class="price-row" data-crop="${escHtml(cropKey)}" onclick="openCropListings('${escHtml(p.crop)}')">
           <span class="crop-icon">${getCropEmoji(p.crop)}</span>
           <div class="crop-info">
             <div class="crop-name">${escHtml(p.crop)}</div>
-            <div class="crop-unit">${escHtml(p.unit)}</div>
+            <div class="crop-unit">Ref: UGX ${Number(p.price).toLocaleString()} ${escHtml(p.unit)}</div>
+            ${rangeHtml}
           </div>
           <div class="crop-right">
-            <div class="crop-price">UGX ${Number(p.price).toLocaleString()}</div>
-            <div class="crop-avail">${counts[i]} listing${counts[i] !== 1 ? 's' : ''}</div>
+            <div class="crop-avail" style="font-size:13px;font-weight:bold;color:#333;">${total} listing${total !== 1 ? 's' : ''}</div>
           </div>
           <span class="crop-arrow">&#8250;</span>
-        </div>`).join('');
+        </div>`;
+      }).join('');
       document.getElementById('price-search').value = '';
       filterPrices('');
     } catch (e) {
@@ -720,12 +782,21 @@
         const stars = rep.sales > 0 ? '&#9733;'.repeat(Math.round(rep.avg)) + '&#9734;'.repeat(5 - Math.round(rep.avg)) : '';
         return `
         <div class="listing-card" onclick="openListingDetail('${escHtml(l.id)}')">
-          <div class="lc-title">${getCropEmoji(crop)} ${escHtml(l.detail)}</div>
-          <div class="lc-location">&#128205; ${escHtml(l.location)}</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div>
+              <div class="lc-title">${getCropEmoji(crop)} ${escHtml(l.detail)}</div>
+              <div class="lc-location">&#128205; ${escHtml(l.location)}</div>
+            </div>
+            ${l.asking_price ? `<div style="text-align:right;flex-shrink:0;">
+              <div style="font-weight:bold;font-size:16px;color:#2e7d32;">UGX ${Number(l.asking_price).toLocaleString()}</div>
+              <div style="font-size:11px;color:#888;">${escHtml(l.price_unit || 'per kg')}</div>
+            </div>` : ''}
+          </div>
           <div class="lc-meta">
             <span class="lc-tag" style="background:${mktColor}18;color:${mktColor};">${mktLabel}</span>
             <span class="lc-tag" style="background:${tierBg};color:${tierColor};">${escHtml(rep.label)}</span>
             ${v && v.verified ? `<span class="lc-tag" style="background:#e8f5e9;color:#2e7d32;">&#9989; Grade ${escHtml(v.grade)}</span>` : ''}
+            ${l.stock ? `<span class="lc-tag" style="background:#f3e5f5;color:#7b1fa2;">&#128230; ${escHtml(l.stock)} in stock</span>` : ''}
           </div>
           ${rep.sales > 0 ? `<div style="margin-top:8px;font-size:13px;color:#f5a623;">${stars} <span style="color:#888;">${rep.avg}/5 (${rep.sales})</span></div>` : ''}
         </div>`;
@@ -790,6 +861,19 @@
           <span class="lc-tag" style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:bold;background:${mktColor}18;color:${mktColor};">${mktLabel}</span>
           <span class="lc-tag" style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:bold;background:${tierBg};color:${tierColor};">${escHtml(rep.label)}</span>
         </div>
+        ${l.asking_price ? `
+        <div style="background:#f0f7f0;border-radius:10px;padding:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-size:12px;color:#888;text-transform:uppercase;font-weight:bold;">Asking Price</div>
+            <div style="font-size:22px;font-weight:bold;color:#2e7d32;">UGX ${Number(l.asking_price).toLocaleString()}</div>
+            <div style="font-size:12px;color:#666;">${escHtml(l.price_unit || 'per kg')}</div>
+          </div>
+          ${l.stock ? `<div style="text-align:right;">
+            <div style="font-size:12px;color:#888;text-transform:uppercase;font-weight:bold;">Stock</div>
+            <div style="font-size:18px;font-weight:bold;color:#7b1fa2;">${escHtml(l.stock)}</div>
+            <div style="font-size:12px;color:#666;">available</div>
+          </div>` : ''}
+        </div>` : ''}
         <div style="display:flex;gap:16px;padding:12px;background:#f9f9f9;border-radius:10px;font-size:13px;color:#555;">
           <div>&#128197; ${escHtml(l.time)}</div>
           ${rep.sales > 0 ? `<div style="color:#f5a623;">${stars} <span style="color:#888;">${rep.avg}/5 (${rep.sales})</span></div>` : '<div style="color:#999;">No reviews yet</div>'}
