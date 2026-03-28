@@ -417,7 +417,12 @@
       if (res.ok) {
         document.getElementById('reg-form-card').style.display = 'none';
         document.getElementById('otp-card').style.display = '';
-        showAlert(document.getElementById('otp-alert'), 'success', data.message || 'OTP sent to your phone.');
+        if (data.code) {
+          document.getElementById('reg-otp').value = data.code;
+          showAlert(document.getElementById('otp-alert'), 'success', 'Sandbox mode — code auto-filled. Click Verify.');
+        } else {
+          showAlert(document.getElementById('otp-alert'), 'success', data.message || 'OTP sent to your phone.');
+        }
       } else {
         showAlert(alertEl, 'error', data.error || 'Registration failed.');
       }

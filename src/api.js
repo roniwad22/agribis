@@ -47,6 +47,7 @@ function createRateLimiter() {
 
 function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     const ADMIN_SECRET = opts?.adminSecret || process.env.ADMIN_SECRET;
+    const isSandbox = (opts?.sandbox !== undefined) ? opts.sandbox : process.env.AT_USERNAME === 'sandbox';
     const router = Router();
     const {
         getProfile, saveProfile, addListing,
@@ -110,7 +111,9 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         const code = generateOtp();
         storeOtp(phone, code, 'agent_register', { name, pin, district });
         await sendSms(sms, phone, `Agri-Bridge: Your verification code is ${code}. Valid for 10 minutes.`);
-        res.json({ success: true, message: 'OTP sent. Verify to complete registration.' });
+        const resp = { success: true, message: 'OTP sent. Verify to complete registration.' };
+        if (isSandbox) resp.code = code;
+        res.json(resp);
     });
 
     router.post('/agents/verify-otp', regLimit, (req, res) => {
@@ -144,7 +147,9 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         const code = generateOtp();
         storeOtp(phone, code, 'buyer_register', { name, pin });
         await sendSms(sms, phone, `Agri-Bridge: Your verification code is ${code}. Valid for 10 minutes.`);
-        res.json({ success: true, message: 'OTP sent. Verify to complete registration.' });
+        const resp = { success: true, message: 'OTP sent. Verify to complete registration.' };
+        if (isSandbox) resp.code = code;
+        res.json(resp);
     });
 
     router.post('/buyers/verify-otp', regLimit, (req, res) => {
@@ -273,7 +278,9 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         const code = generateOtp();
         storeOtp(phone, code, 'profile_register', { name, parish: parish || 'Unknown', district: district || 'Uganda' });
         await sendSms(sms, phone, `Agri-Bridge: Your verification code is ${code}. Valid for 10 minutes.`);
-        res.json({ success: true, message: 'OTP sent. Verify to complete profile creation.' });
+        const resp = { success: true, message: 'OTP sent. Verify to complete profile creation.' };
+        if (isSandbox) resp.code = code;
+        res.json(resp);
     });
 
     router.post('/profiles/verify-otp', regLimit, (req, res) => {
