@@ -932,8 +932,7 @@ ${sellerPhone} now has ${rep.avg}/5 from ${rep.sales} buyer(s).`;
 // ==========================================
 if (require.main === module) {
     if (!process.env.ADMIN_SECRET) {
-        console.error('[SECURITY] ADMIN_SECRET is not set in .env — admin endpoints will be inaccessible until it is configured.');
-        process.exit(1);
+        console.warn('[SECURITY] ADMIN_SECRET is not set — admin endpoints will be inaccessible. Set it in env vars.');
     }
 
     const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'agribis.db');
