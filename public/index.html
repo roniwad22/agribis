@@ -460,12 +460,42 @@
         </select>
         <label>Total Stock Available</label>
         <input type="text" id="list-stock" placeholder="e.g. 500kg">
-        <p style="font-size:12px; color:#888; margin-top:-10px; margin-bottom:14px;">
+        <div style="margin-top:4px;margin-bottom:14px;">
+          <label>Farm Location</label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button class="btn" onclick="captureFarmGPS()" style="flex:0 0 auto;width:auto;padding:10px 16px;font-size:13px;background:#1565c0;">&#128205; Share My Location</button>
+            <span id="gps-status" style="font-size:12px;color:#888;">Not captured</span>
+          </div>
+          <input type="hidden" id="list-lat" value="">
+          <input type="hidden" id="list-lng" value="">
+          <p style="font-size:11px;color:#888;margin-top:4px;">Helps buyers find your farm and get directions.</p>
+        </div>
+        <p style="font-size:12px; color:#888; margin-bottom:14px;">
           Your listing goes live immediately. Large quantities may be visited by a field agent for verification.
         </p>
         <div id="list-alert" style="display:none;"></div>
         <button class="btn" onclick="submitListing()">Submit Listing</button>
       </div>`;
+  }
+
+  function captureFarmGPS() {
+    const statusEl = document.getElementById('gps-status');
+    if (!navigator.geolocation) { statusEl.textContent = 'GPS not available'; statusEl.style.color = '#c62828'; return; }
+    statusEl.textContent = 'Locating...';
+    statusEl.style.color = '#f57c00';
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        document.getElementById('list-lat').value = pos.coords.latitude;
+        document.getElementById('list-lng').value = pos.coords.longitude;
+        statusEl.textContent = `GPS captured (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`;
+        statusEl.style.color = '#2e7d32';
+      },
+      err => {
+        statusEl.textContent = 'Location denied — buyers won\'t get directions';
+        statusEl.style.color = '#c62828';
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
   }
 
   async function submitRegister() {
@@ -533,13 +563,15 @@
     const asking_price = document.getElementById('list-price').value.trim();
     const price_unit = document.getElementById('list-unit').value;
     const stock = document.getElementById('list-stock').value.trim();
+    const lat = document.getElementById('list-lat').value || undefined;
+    const lng = document.getElementById('list-lng').value || undefined;
     const alertEl = document.getElementById('list-alert');
     if (!detail) { showAlert(alertEl, 'error', 'Please enter crop and quantity.'); return; }
     try {
       const res = await fetch(`${API}/api/listings/farmer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: myPhone, detail, asking_price: asking_price || undefined, price_unit, stock: stock || undefined })
+        body: JSON.stringify({ phone: myPhone, detail, asking_price: asking_price || undefined, price_unit, stock: stock || undefined, lat, lng })
       });
       const data = await res.json();
       if (data.status === '[APPROVED]') {
@@ -550,6 +582,10 @@
       document.getElementById('list-detail').value = '';
       document.getElementById('list-price').value = '';
       document.getElementById('list-stock').value = '';
+      document.getElementById('list-lat').value = '';
+      document.getElementById('list-lng').value = '';
+      document.getElementById('gps-status').textContent = 'Not captured';
+      document.getElementById('gps-status').style.color = '#888';
     } catch (e) {
       showAlert(alertEl, 'error', 'Submission failed. Try again.');
     }
@@ -797,6 +833,7 @@
             <span class="lc-tag" style="background:${tierBg};color:${tierColor};">${escHtml(rep.label)}</span>
             ${v && v.verified ? `<span class="lc-tag" style="background:#e8f5e9;color:#2e7d32;">&#9989; Grade ${escHtml(v.grade)}</span>` : ''}
             ${l.stock ? `<span class="lc-tag" style="background:#f3e5f5;color:#7b1fa2;">&#128230; ${escHtml(l.stock)} in stock</span>` : ''}
+            ${l.lat && l.lng ? `<span class="lc-tag" style="background:#e3f2fd;color:#1565c0;">&#128506; GPS</span>` : ''}
           </div>
           ${rep.sales > 0 ? `<div style="margin-top:8px;font-size:13px;color:#f5a623;">${stars} <span style="color:#888;">${rep.avg}/5 (${rep.sales})</span></div>` : ''}
         </div>`;
@@ -881,6 +918,19 @@
       </div>
       ${verificationReport}
       ${l.video ? `<div class="card" style="border-radius:12px;"><h3 style="margin-bottom:10px;">&#127909; Evidence Video</h3><video src="/uploads/${escHtml(l.video)}" controls style="width:100%;border-radius:8px;"></video></div>` : ''}
+      ${(() => {
+        const farmLat = l.lat || (v && v.geo ? v.geo.lat : null);
+        const farmLng = l.lng || (v && v.geo ? v.geo.lng : null);
+        if (!farmLat || !farmLng) return '';
+        const dirUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + farmLat + ',' + farmLng;
+        const mapUrl = 'https://www.google.com/maps?q=' + farmLat + ',' + farmLng;
+        return `<div class="card" style="border-radius:12px;text-align:center;">
+          <h3 style="margin-bottom:8px;">&#128506; Farm Location</h3>
+          <p style="font-size:13px;color:#666;margin-bottom:12px;">&#128205; ${farmLat.toFixed(4)}, ${farmLng.toFixed(4)}</p>
+          <a href="${dirUrl}" target="_blank" rel="noopener" class="btn" style="display:block;text-decoration:none;border-radius:10px;font-size:16px;background:#1565c0;">&#128663; Get Directions</a>
+          <a href="${mapUrl}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:13px;color:#1565c0;text-decoration:underline;">View on Map</a>
+        </div>`;
+      })()}
       ${buyerLoggedIn ? `
         <div class="card" style="text-align:center;border-radius:12px;">
           <a href="tel:${escHtml(l.phone)}" class="btn" style="display:block;text-decoration:none;border-radius:10px;font-size:17px;">&#128222; Call Farmer</a>

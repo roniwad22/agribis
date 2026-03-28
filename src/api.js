@@ -224,9 +224,9 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         res.json(getApprovedListings(type, crop));
     });
 
-    // POST /api/listings/farmer  { phone, detail, asking_price?, price_unit?, stock? }
+    // POST /api/listings/farmer  { phone, detail, asking_price?, price_unit?, stock?, lat?, lng? }
     router.post('/listings/farmer', listLimit, (req, res) => {
-        const { phone, detail, asking_price, price_unit, stock } = req.body;
+        const { phone, detail, asking_price, price_unit, stock, lat, lng } = req.body;
         if (!phone || !detail) return res.status(400).json({ error: 'phone and detail are required' });
         const profile = getProfile(phone);
         if (!profile) return res.status(404).json({ error: 'Profile not found. Please register first.' });
@@ -236,7 +236,9 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
             phone, detail, location: profile.parish, type: 'VILLAGE', status,
             asking_price: asking_price ? parseInt(asking_price) : null,
             price_unit: price_unit || null,
-            stock: stock || null
+            stock: stock || null,
+            lat: lat ? parseFloat(lat) : null,
+            lng: lng ? parseFloat(lng) : null
         };
         addListing(listing);
         res.json({ success: true, status });

@@ -73,6 +73,8 @@ function createDb(dbPath) {
     try { db.exec('ALTER TABLE listings ADD COLUMN asking_price INTEGER'); } catch (_) {}
     try { db.exec('ALTER TABLE listings ADD COLUMN price_unit TEXT'); } catch (_) {}
     try { db.exec('ALTER TABLE listings ADD COLUMN stock TEXT'); } catch (_) {}
+    try { db.exec('ALTER TABLE listings ADD COLUMN lat REAL'); } catch (_) {}
+    try { db.exec('ALTER TABLE listings ADD COLUMN lng REAL'); } catch (_) {}
     // Fix units for crops that aren't sold per kg
     try { db.exec("UPDATE prices SET unit = 'per bunch' WHERE crop = 'Matooke' AND unit = 'per kg'"); } catch (_) {}
     db.exec(`
@@ -88,7 +90,9 @@ function createDb(dbPath) {
         verification TEXT,
         asking_price INTEGER,
         price_unit TEXT,
-        stock TEXT
+        stock TEXT,
+        lat REAL,
+        lng REAL
       );
       CREATE TABLE IF NOT EXISTS profiles (
         phone TEXT PRIMARY KEY,
@@ -216,9 +220,10 @@ function createHelpers(db) {
             return profile;
         },
         addListing(listing) {
-            db.prepare('INSERT INTO listings (id,time,phone,detail,location,type,status,asking_price,price_unit,stock) VALUES (?,?,?,?,?,?,?,?,?,?)')
+            db.prepare('INSERT INTO listings (id,time,phone,detail,location,type,status,asking_price,price_unit,stock,lat,lng) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
               .run(listing.id, listing.time, listing.phone, listing.detail, listing.location, listing.type, listing.status,
-                   listing.asking_price || null, listing.price_unit || null, listing.stock || null);
+                   listing.asking_price || null, listing.price_unit || null, listing.stock || null,
+                   listing.lat || null, listing.lng || null);
         },
         getApprovedListings(type, crop) {
             if (crop) {
