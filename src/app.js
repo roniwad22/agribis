@@ -936,7 +936,7 @@ if (require.main === module) {
         process.exit(1);
     }
 
-    const dbPath = path.join(__dirname, '..', 'agribis.db');
+    const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'agribis.db');
     const db = createDb(dbPath);
 
     migrateJSON(db, path.join(__dirname, '..', 'ledger.json'), (db, data) => {

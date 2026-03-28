@@ -1,0 +1,10 @@
+node_modules
+.env
+agribis.db
+agribis.db-wal
+agribis.db-shm
+*.migrated
+.git
+.claude
+uploads/*.mp4
+uploads/*.mov
