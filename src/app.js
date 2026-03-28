@@ -69,6 +69,7 @@ function createDb(dbPath) {
     try { db.exec('ALTER TABLE listings ADD COLUMN video TEXT'); } catch (_) {}
     try { db.exec('ALTER TABLE prices ADD COLUMN unit TEXT DEFAULT \'per kg\''); } catch (_) {}
     try { db.exec('ALTER TABLE listings ADD COLUMN verification TEXT'); } catch (_) {}
+    try { db.exec('ALTER TABLE profiles ADD COLUMN pin_hash TEXT'); } catch (_) {}
     // Fix units for crops that aren't sold per kg
     try { db.exec("UPDATE prices SET unit = 'per bunch' WHERE crop = 'Matooke' AND unit = 'per kg'"); } catch (_) {}
     db.exec(`
@@ -87,7 +88,8 @@ function createDb(dbPath) {
         phone TEXT PRIMARY KEY,
         name TEXT,
         parish TEXT,
-        district TEXT
+        district TEXT,
+        pin_hash TEXT
       );
       CREATE TABLE IF NOT EXISTS prices (
         crop TEXT PRIMARY KEY,
@@ -193,8 +195,19 @@ function createHelpers(db) {
         getProfile(phone) {
             return db.prepare('SELECT * FROM profiles WHERE phone = ?').get(phone) || null;
         },
-        saveProfile(phone, name, parish, district) {
-            db.prepare('INSERT OR REPLACE INTO profiles (phone,name,parish,district) VALUES (?,?,?,?)').run(phone, name, parish, district);
+        saveProfile(phone, name, parish, district, pin) {
+            const pinHash = pin ? hashPin(pin) : null;
+            db.prepare('INSERT OR REPLACE INTO profiles (phone,name,parish,district,pin_hash) VALUES (?,?,?,?,COALESCE(?,( SELECT pin_hash FROM profiles WHERE phone = ?)))').run(phone, name, parish, district, pinHash, phone);
+        },
+        setProfilePin(phone, pin) {
+            db.prepare('UPDATE profiles SET pin_hash = ? WHERE phone = ?').run(hashPin(pin), phone);
+        },
+        authenticateProfile(phone, pin) {
+            const profile = db.prepare('SELECT * FROM profiles WHERE phone = ?').get(phone);
+            if (!profile) return null;
+            if (!profile.pin_hash) return null; // no PIN set yet
+            if (profile.pin_hash !== hashPin(pin)) return null;
+            return profile;
         },
         addListing(listing) {
             db.prepare('INSERT INTO listings (id,time,phone,detail,location,type,status) VALUES (?,?,?,?,?,?,?)')

@@ -370,6 +370,8 @@
         <input type="text" id="reg-parish" placeholder="e.g. Kibibi">
         <label>District</label>
         <input type="text" id="reg-district" placeholder="e.g. Mityana">
+        <label>4-Digit PIN <span style="font-weight:normal;color:#888">(for logging in later)</span></label>
+        <input type="password" id="reg-pin" placeholder="e.g. 1234" maxlength="4" inputmode="numeric">
         <div id="reg-alert" style="display:none;"></div>
         <button class="btn" onclick="submitRegister()">Register</button>
       </div>
@@ -402,16 +404,21 @@
     const name = document.getElementById('reg-name').value.trim();
     const parish = document.getElementById('reg-parish').value.trim();
     const district = document.getElementById('reg-district').value.trim();
+    const pin = document.getElementById('reg-pin').value.trim();
     const alertEl = document.getElementById('reg-alert');
     if (!name || !parish || !district) {
       showAlert(alertEl, 'error', 'All fields are required.');
+      return;
+    }
+    if (pin && !/^\d{4}$/.test(pin)) {
+      showAlert(alertEl, 'error', 'PIN must be exactly 4 digits.');
       return;
     }
     try {
       const res = await fetch(`${API}/api/profiles`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: myPhone, name, parish, district })
+        body: JSON.stringify({ phone: myPhone, name, parish, district, pin: pin || undefined })
       });
       const data = await res.json();
       if (res.ok) {

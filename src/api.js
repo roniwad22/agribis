@@ -58,6 +58,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         getPrices, setPrices,
         registerAgent, authenticateAgent, getAgent, setAgentStatus, getAllAgents,
         registerBuyer, authenticateBuyer,
+        setProfilePin, authenticateProfile,
         generateOtp, storeOtp, verifyOtp
     } = helpers;
 
@@ -273,10 +274,11 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     });
 
     router.post('/profiles', regLimit, async (req, res) => {
-        const { phone, name, parish, district } = req.body;
+        const { phone, name, parish, district, pin } = req.body;
         if (!phone || !name) return res.status(400).json({ error: 'phone and name are required' });
+        if (pin && !/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
         const code = generateOtp();
-        storeOtp(phone, code, 'profile_register', { name, parish: parish || 'Unknown', district: district || 'Uganda' });
+        storeOtp(phone, code, 'profile_register', { name, parish: parish || 'Unknown', district: district || 'Uganda', pin: pin || null });
         await sendSms(sms, phone, `Agri-Bridge: Your verification code is ${code}. Valid for 10 minutes.`);
         const resp = { success: true, message: 'OTP sent. Verify to complete profile creation.' };
         if (isSandbox) resp.code = code;
@@ -288,9 +290,46 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         if (!phone || !code) return res.status(400).json({ error: 'phone and code required' });
         const result = verifyOtp(phone, code, 'profile_register');
         if (result.error) return res.status(400).json({ error: result.error });
-        const { name, parish, district } = result.payload;
-        saveProfile(phone, name, parish, district);
+        const { name, parish, district, pin } = result.payload;
+        saveProfile(phone, name, parish, district, pin);
         res.json({ success: true });
+    });
+
+    // Set PIN for existing farmer profile (e.g. USSD-registered farmer wants to use Pro App)
+    router.post('/profiles/set-pin', authLimit, async (req, res) => {
+        const { phone, pin } = req.body;
+        if (!phone || !pin) return res.status(400).json({ error: 'phone and pin required' });
+        if (!/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
+        const profile = getProfile(phone);
+        if (!profile) return res.status(404).json({ error: 'No profile found. Register first.' });
+        // Send OTP to verify phone ownership before setting PIN
+        const code = generateOtp();
+        storeOtp(phone, code, 'set_pin', { pin });
+        await sendSms(sms, phone, `Agri-Bridge: Your verification code is ${code}. Valid for 10 minutes.`);
+        const resp = { success: true, message: 'OTP sent. Verify to set your PIN.' };
+        if (isSandbox) resp.code = code;
+        res.json(resp);
+    });
+
+    router.post('/profiles/verify-pin-otp', authLimit, (req, res) => {
+        const { phone, code } = req.body;
+        if (!phone || !code) return res.status(400).json({ error: 'phone and code required' });
+        const result = verifyOtp(phone, code, 'set_pin');
+        if (result.error) return res.status(400).json({ error: result.error });
+        setProfilePin(phone, result.payload.pin);
+        res.json({ success: true, message: 'PIN set. You can now log in.' });
+    });
+
+    // Farmer login (for Pro App — works for both USSD and Pro App registered farmers)
+    router.post('/profiles/login', authLimit, (req, res) => {
+        const { phone, pin } = req.body;
+        if (!phone || !pin) return res.status(400).json({ error: 'phone and pin required' });
+        const profile = getProfile(phone);
+        if (!profile) return res.status(403).json({ error: 'No profile found. Register first.' });
+        if (!profile.pin_hash) return res.status(403).json({ error: 'No PIN set. Use Set PIN first.', needsPin: true });
+        const authed = authenticateProfile(phone, pin);
+        if (!authed) return res.status(403).json({ error: 'Wrong PIN.' });
+        res.json({ success: true, profile: { phone: authed.phone, name: authed.name, parish: authed.parish, district: authed.district } });
     });
 
     // ==========================================
