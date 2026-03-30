@@ -225,6 +225,8 @@ function createDb(dbPath) {
         notes TEXT,
         driver_phone TEXT,
         truck_plate_number TEXT,
+        disbursed_at TEXT,
+        disbursement_ref TEXT,
         FOREIGN KEY (batch_id) REFERENCES batches(id),
         FOREIGN KEY (agent_phone) REFERENCES agents(phone)
       );
@@ -752,6 +754,11 @@ function createHelpers(db) {
             if (esc.buyer_phone !== phone && phone !== 'ADMIN') return { error: 'Only buyer or admin can cancel' };
             if (esc.status === 'RELEASED' || esc.status === 'CANCELLED') return { error: `Cannot cancel in ${esc.status} state` };
             if (esc.status === 'IN_TRANSIT') return { error: 'Cannot cancel after dispatch — file a dispute instead' };
+            // 4-hour cancel window: buyer can only cancel within 4h of funds being locked
+            if (esc.status === 'FUNDS_LOCKED' && esc.locked_at && phone !== 'ADMIN') {
+                const hoursSinceLock = (Date.now() - new Date(esc.locked_at).getTime()) / (1000 * 60 * 60);
+                if (hoursSinceLock > 4) return { error: 'Cancel window expired (4 hours). Contact admin for assistance.' };
+            }
             const now = new Date().toISOString();
             db.prepare("UPDATE escrow_transactions SET status = 'CANCELLED', cancelled_at = ? WHERE id = ?").run(now, escrowId);
             db.prepare("UPDATE batches SET buyer_phone = NULL, status = 'closed' WHERE id = ?").run(esc.batch_id);
@@ -831,6 +838,105 @@ function createHelpers(db) {
         getStaleEscrows() {
             const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
             return db.prepare("SELECT * FROM escrow_transactions WHERE status = 'FUNDS_LOCKED' AND locked_at < ?").all(cutoff);
+        },
+
+        // ==========================================
+        // DISPATCH SLA (24h auto-cancel, 20h warning)
+        // ==========================================
+        getDispatchWarningEscrows() {
+            // FUNDS_LOCKED for 20-24h — need SMS warning
+            const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+            const to = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
+            return db.prepare("SELECT * FROM escrow_transactions WHERE status = 'FUNDS_LOCKED' AND locked_at < ? AND locked_at >= ?").all(to, from);
+        },
+        getDispatchExpiredEscrows() {
+            // FUNDS_LOCKED for 24h+ — auto-cancel
+            const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+            return db.prepare("SELECT * FROM escrow_transactions WHERE status = 'FUNDS_LOCKED' AND locked_at < ?").all(cutoff);
+        },
+        autoExpireEscrow(escrowId) {
+            const esc = db.prepare('SELECT * FROM escrow_transactions WHERE id = ?').get(escrowId);
+            if (!esc || esc.status !== 'FUNDS_LOCKED') return null;
+            const now = new Date().toISOString();
+            db.prepare("UPDATE escrow_transactions SET status = 'CANCELLED', cancelled_at = ?, notes = 'Auto-cancelled: agent failed 24h dispatch SLA' WHERE id = ?").run(now, escrowId);
+            db.prepare("UPDATE batches SET buyer_phone = NULL, status = 'closed' WHERE id = ?").run(esc.batch_id);
+            // Ding agent trust score
+            helpers.disputeBatch(esc.batch_id, 'Dispatch SLA breach: 24h expiry');
+            helpers.resolveDispute(esc.batch_id, 'Auto-cancelled: agent missed dispatch window');
+            return { ...esc, status: 'CANCELLED', cancelled_at: now };
+        },
+
+        // ==========================================
+        // DELIVERY TIMEOUT (IN_TRANSIT 72h+ — buyer ghosting)
+        // ==========================================
+        getDeliveryTimeoutEscrows() {
+            const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+            return db.prepare("SELECT * FROM escrow_transactions WHERE status = 'IN_TRANSIT' AND dispatched_at < ?").all(cutoff);
+        },
+
+        // ==========================================
+        // ADMIN OPS HELPERS
+        // ==========================================
+        getArbitrationQueue() {
+            return db.prepare(`
+                SELECT e.*, b.crop, b.total_quantity_kg, b.batch_code, b.overall_grade,
+                       a.name as agent_name, a.district as agent_district
+                FROM escrow_transactions e
+                JOIN batches b ON e.batch_id = b.id
+                JOIN agents a ON e.agent_phone = a.phone
+                WHERE e.status IN ('DISPUTED', 'FUNDS_LOCKED', 'IN_TRANSIT')
+                AND (
+                    e.status = 'DISPUTED'
+                    OR (e.status = 'FUNDS_LOCKED' AND e.locked_at < ?)
+                    OR (e.status = 'IN_TRANSIT' AND e.dispatched_at < ?)
+                )
+                ORDER BY
+                    CASE e.status WHEN 'DISPUTED' THEN 0 ELSE 1 END,
+                    e.created_at ASC
+            `).all(
+                new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
+                new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString()
+            ).map(e => {
+                const wr = db.prepare('SELECT subcounty_location, facility_type, photo_url FROM warehouse_receipts WHERE batch_id = ?').get(e.batch_id);
+                const trust = helpers.calculateTrustScore(e.agent_phone);
+                const queueType = e.status === 'DISPUTED' ? 'DISPUTED'
+                    : e.status === 'FUNDS_LOCKED' ? 'STALE'
+                    : 'DELIVERY_TIMEOUT';
+                return { ...e, warehouse: wr || null, agent_trust: trust, queue_type: queueType };
+            });
+        },
+        getPendingPayouts() {
+            return db.prepare(`
+                SELECT e.*, b.crop, b.total_quantity_kg, b.batch_code,
+                       a.name as agent_name, a.district as agent_district
+                FROM escrow_transactions e
+                JOIN batches b ON e.batch_id = b.id
+                JOIN agents a ON e.agent_phone = a.phone
+                WHERE e.status = 'RELEASED' AND e.payout_status IN ('RELEASED', 'PARTIAL')
+                ORDER BY e.released_at ASC
+            `).all();
+        },
+        disburseEscrow(escrowId, disbursementRef) {
+            const esc = db.prepare('SELECT * FROM escrow_transactions WHERE id = ?').get(escrowId);
+            if (!esc) return { error: 'Escrow not found' };
+            if (esc.status !== 'RELEASED') return { error: 'Escrow not in RELEASED state' };
+            if (esc.payout_status === 'DISBURSED') return { error: 'Already disbursed' };
+            if (!disbursementRef || !disbursementRef.trim()) return { error: 'Disbursement reference (MoMo receipt) is required' };
+            const now = new Date().toISOString();
+            db.prepare("UPDATE escrow_transactions SET payout_status = 'DISBURSED', disbursed_at = ?, disbursement_ref = ? WHERE id = ?").run(now, disbursementRef.trim(), escrowId);
+            return { ...esc, payout_status: 'DISBURSED', disbursed_at: now, disbursement_ref: disbursementRef.trim() };
+        },
+        getAdminStats() {
+            const total = db.prepare('SELECT COUNT(*) as c FROM escrow_transactions').get().c;
+            const active = db.prepare("SELECT COUNT(*) as c FROM escrow_transactions WHERE status IN ('PENDING_PAYMENT','FUNDS_LOCKED','IN_TRANSIT')").get().c;
+            const released = db.prepare("SELECT COUNT(*) as c FROM escrow_transactions WHERE status = 'RELEASED'").get().c;
+            const disputed = db.prepare("SELECT COUNT(*) as c FROM escrow_transactions WHERE status = 'DISPUTED'").get().c;
+            const cancelled = db.prepare("SELECT COUNT(*) as c FROM escrow_transactions WHERE status = 'CANCELLED'").get().c;
+            const disbursed = db.prepare("SELECT COUNT(*) as c FROM escrow_transactions WHERE payout_status = 'DISBURSED'").get().c;
+            const pendingPayout = db.prepare("SELECT COUNT(*) as c FROM escrow_transactions WHERE status = 'RELEASED' AND payout_status IN ('RELEASED','PARTIAL')").get().c;
+            const totalRevenue = db.prepare("SELECT COALESCE(SUM(platform_fee),0) as s FROM escrow_transactions WHERE status = 'RELEASED'").get().s;
+            const totalVolume = db.prepare("SELECT COALESCE(SUM(total_amount),0) as s FROM escrow_transactions WHERE status NOT IN ('CANCELLED')").get().s;
+            return { total, active, released, disputed, cancelled, disbursed, pending_payout: pendingPayout, total_revenue: totalRevenue, total_volume: totalVolume };
         }
     };
     return helpers;

@@ -942,6 +942,76 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         res.json(helpers.getStaleEscrows());
     });
 
+    // ==========================================
+    // ADMIN OPS CENTER (Layer 3)
+    // ==========================================
+
+    // GET /api/admin/arbitration — Unified dispute + stale + delivery timeout queue
+    router.get('/admin/arbitration', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        res.json(helpers.getArbitrationQueue());
+    });
+
+    // GET /api/admin/payout/pending — Released escrows awaiting disbursement
+    router.get('/admin/payout/pending', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        res.json(helpers.getPendingPayouts());
+    });
+
+    // PATCH /api/admin/payout/:id/disburse — Mark payout as disbursed (requires MoMo receipt ref)
+    router.patch('/admin/payout/:id/disburse', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        const { disbursement_ref } = req.body;
+        const result = helpers.disburseEscrow(req.params.id, disbursement_ref);
+        if (result.error) return res.status(400).json({ error: result.error });
+        // SMS: notify agent that payout has been sent
+        sendSms(sms, result.agent_phone, `Agri-Bridge: UGX ${Number(result.agent_payout).toLocaleString()} sent to your MoMo! Ref: ${result.disbursement_ref}`);
+        res.json({ success: true, payout_status: 'DISBURSED', disbursement_ref: result.disbursement_ref });
+    });
+
+    // GET /api/admin/payout/export — CSV download for MoMo Bulk Pay
+    router.get('/admin/payout/export', (req, res) => {
+        const secret = req.headers['x-admin-secret'] || req.query.secret;
+        if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        const rows = helpers.getPendingPayouts();
+        const csvHeader = 'phone,amount,narration,batch_code,escrow_id,released_at\n';
+        const csvBody = rows.map(r => {
+            const phone = r.agent_phone.replace(/[+\s]/g, '');
+            const narration = `AgriBridge Payout - Batch ${r.batch_code}`;
+            return `${phone},${r.agent_payout},"${narration}",${r.batch_code},${r.id},${r.released_at}`;
+        }).join('\n');
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="agribridge-payouts-${new Date().toISOString().slice(0,10)}.csv"`);
+        res.send(csvHeader + csvBody);
+    });
+
+    // GET /api/admin/stats — Platform stats overview
+    router.get('/admin/stats', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        res.json(helpers.getAdminStats());
+    });
+
+    // POST /api/admin/sla/enforce — Run dispatch SLA enforcement (20h warning + 24h auto-cancel)
+    router.post('/admin/sla/enforce', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        // 20h warnings
+        const warnings = helpers.getDispatchWarningEscrows();
+        warnings.forEach(esc => {
+            sendSms(sms, esc.agent_phone, `Agri-Bridge WARNING: Your escrow order expires in 4 hours! Log driver/truck details NOW or the order will be auto-cancelled and your trust score penalized.`);
+        });
+        // 24h auto-cancels
+        const expired = helpers.getDispatchExpiredEscrows();
+        const cancelled = expired.map(esc => {
+            const result = helpers.autoExpireEscrow(esc.id);
+            if (result) {
+                sendSms(sms, result.agent_phone, `Agri-Bridge: Order auto-cancelled — you missed the 24h dispatch window. Your trust score has been affected.`);
+                sendSms(sms, result.buyer_phone, `Agri-Bridge: Your order has been auto-cancelled and refund initiated. The agent failed to dispatch within 24 hours. The batch is back on the marketplace.`);
+            }
+            return result;
+        }).filter(Boolean);
+        res.json({ warnings_sent: warnings.length, auto_cancelled: cancelled.length });
+    });
+
     // POST /api/escrow/:id/simulate-payment — Dev-only: simulate MoMo payment
     router.post('/escrow/:id/simulate-payment', (req, res) => {
         if (!isSandbox) return res.status(403).json({ error: 'Only available in sandbox mode' });

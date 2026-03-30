@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Ops — Agri-Bridge</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
+  .header { background: #1a237e; color: #fff; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+  .header h1 { font-size: 18px; }
+  .header .logout { background: rgba(255,255,255,0.2); border: none; color: #fff; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .tabs { display: flex; background: #fff; border-bottom: 2px solid #e0e0e0; position: sticky; top: 48px; z-index: 99; }
+  .tab { flex: 1; text-align: center; padding: 12px 8px; font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 3px solid transparent; color: #666; }
+  .tab.active { color: #1a237e; border-bottom-color: #1a237e; }
+  .panel { display: none; padding: 12px; }
+  .panel.active { display: block; }
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  .stat-card { background: #fff; border-radius: 8px; padding: 12px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .stat-card .num { font-size: 24px; font-weight: 700; color: #1a237e; }
+  .stat-card .label { font-size: 11px; color: #888; margin-top: 2px; }
+  .card { background: #fff; border-radius: 8px; padding: 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .card-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; color: #fff; }
+  .badge-disputed { background: #c62828; }
+  .badge-stale { background: #f57f17; color: #333; }
+  .badge-timeout { background: #e65100; }
+  .badge-pending { background: #1565c0; }
+  .badge-disbursed { background: #2e7d32; }
+  .info-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; border-bottom: 1px solid #f5f5f5; }
+  .info-row:last-child { border-bottom: none; }
+  .btn { display: inline-block; padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; margin: 4px 4px 4px 0; }
+  .btn-release { background: #2e7d32; color: #fff; }
+  .btn-refund { background: #c62828; color: #fff; }
+  .btn-partial { background: #f57f17; color: #333; }
+  .btn-disburse { background: #1565c0; color: #fff; }
+  .btn-export { background: #1a237e; color: #fff; }
+  .btn-sla { background: #e65100; color: #fff; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  input[type="text"], input[type="number"], input[type="password"] {
+    width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin: 4px 0;
+  }
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; }
+  .modal-overlay.active { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 20px; width: 90%; max-width: 400px; }
+  .modal h3 { margin-bottom: 12px; }
+  .spinner { text-align: center; padding: 40px; color: #888; }
+  .empty { text-align: center; padding: 40px; color: #aaa; font-size: 14px; }
+  .trust-tier { font-weight: 700; }
+  .trust-DIAMOND { color: #1565c0; } .trust-GOLD { color: #f9a825; }
+  .trust-SILVER { color: #757575; } .trust-BRONZE { color: #a1887f; }
+  .trust-NONE { color: #bdbdbd; }
+  #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  #app-screen { display: none; }
+  .login-box { background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 90%; max-width: 360px; }
+  .login-box h2 { text-align: center; margin-bottom: 16px; color: #1a237e; }
+  .login-box .btn { width: 100%; margin-top: 8px; background: #1a237e; color: #fff; padding: 10px; }
+  .warehouse-photo { width: 100%; max-height: 200px; object-fit: cover; border-radius: 6px; margin: 8px 0; }
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-box">
+    <h2>Admin Operations</h2>
+    <input type="password" id="admin-secret-input" placeholder="Admin Secret">
+    <button class="btn" onclick="doAdminLogin()">Login</button>
+  </div>
+</div>
+
+<div id="app-screen">
+  <div class="header">
+    <h1>Admin Ops Center</h1>
+    <button class="logout" onclick="adminLogout()">Logout</button>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('overview')">Overview</div>
+    <div class="tab" onclick="switchTab('arbitration')">Arbitration</div>
+    <div class="tab" onclick="switchTab('payouts')">Payouts</div>
+  </div>
+
+  <!-- OVERVIEW PANEL -->
+  <div id="panel-overview" class="panel active">
+    <div id="stats-container"><div class="spinner">Loading...</div></div>
+    <button class="btn btn-sla" style="width:100%;margin-top:8px;" onclick="runSlaEnforcement()">Run Dispatch SLA Check</button>
+    <div id="sla-result" style="margin-top:8px;font-size:13px;"></div>
+  </div>
+
+  <!-- ARBITRATION PANEL -->
+  <div id="panel-arbitration" class="panel">
+    <div id="arbitration-list"><div class="spinner">Loading...</div></div>
+  </div>
+
+  <!-- PAYOUTS PANEL -->
+  <div id="panel-payouts" class="panel">
+    <div style="margin-bottom:10px;">
+      <button class="btn btn-export" onclick="exportCsv()">Export CSV for MoMo Bulk Pay</button>
+    </div>
+    <div id="payouts-list"><div class="spinner">Loading...</div></div>
+  </div>
+</div>
+
+<!-- RESOLVE MODAL -->
+<div id="resolve-modal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="resolve-modal-title">Resolve Escrow</h3>
+    <div id="resolve-modal-body"></div>
+    <div style="margin-top:12px;">
+      <label style="font-size:13px;font-weight:600;">Action:</label>
+      <div style="margin:8px 0;">
+        <button class="btn btn-release" onclick="submitResolve('release')">Full Release to Agent</button>
+        <button class="btn btn-refund" onclick="submitResolve('refund')">Full Refund to Buyer</button>
+      </div>
+      <div style="margin:8px 0;padding:10px;background:#f5f5f5;border-radius:6px;">
+        <label style="font-size:12px;font-weight:600;">Partial Split:</label>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+          <input type="number" id="partial-pct" min="0" max="100" value="80" style="width:80px;">
+          <span style="font-size:13px;">% to Agent</span>
+          <button class="btn btn-partial" onclick="submitResolve('partial')">Apply Split</button>
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <input type="text" id="resolve-notes" placeholder="Resolution notes (required)">
+      </div>
+      <button class="btn" style="background:#9e9e9e;color:#fff;margin-top:8px;" onclick="closeResolveModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- DISBURSE MODAL -->
+<div id="disburse-modal" class="modal-overlay">
+  <div class="modal">
+    <h3>Mark as Disbursed</h3>
+    <div id="disburse-modal-body"></div>
+    <div style="margin-top:12px;">
+      <input type="text" id="disburse-ref" placeholder="MoMo receipt / network ref (required)">
+      <button class="btn btn-disburse" style="width:100%;margin-top:8px;" onclick="submitDisburse()">Confirm Disbursement</button>
+      <button class="btn" style="background:#9e9e9e;color:#fff;width:100%;margin-top:4px;" onclick="closeDisburseModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = '';
+  let adminSecret = '';
+  let currentResolveId = null;
+  let currentDisburseId = null;
+
+  function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+  function formatUGX(n) { return 'UGX ' + Number(n).toLocaleString(); }
+  function formatDate(d) { return d ? new Date(d).toLocaleString() : '—'; }
+  function adminHeaders() { return { 'Content-Type': 'application/json', 'x-admin-secret': adminSecret }; }
+
+  function doAdminLogin() {
+    adminSecret = document.getElementById('admin-secret-input').value.trim();
+    if (!adminSecret) return alert('Enter admin secret');
+    fetch(API + '/api/admin/stats', { headers: adminHeaders() })
+      .then(r => { if (!r.ok) throw new Error('Invalid'); return r.json(); })
+      .then(() => {
+        sessionStorage.setItem('admin_secret', adminSecret);
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('app-screen').style.display = 'block';
+        loadOverview();
+      })
+      .catch(() => alert('Invalid admin secret'));
+  }
+
+  function adminLogout() {
+    sessionStorage.removeItem('admin_secret');
+    adminSecret = '';
+    document.getElementById('app-screen').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+  }
+
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      const panels = ['overview', 'arbitration', 'payouts'];
+      t.classList.toggle('active', panels[i] === name);
+    });
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+    if (name === 'overview') loadOverview();
+    if (name === 'arbitration') loadArbitration();
+    if (name === 'payouts') loadPayouts();
+  }
+
+  // ==========================================
+  // OVERVIEW
+  // ==========================================
+  async function loadOverview() {
+    const el = document.getElementById('stats-container');
+    try {
+      const r = await fetch(API + '/api/admin/stats', { headers: adminHeaders() });
+      const s = await r.json();
+      el.innerHTML = `
+        <div class="stats-grid">
+          <div class="stat-card"><div class="num">${s.total}</div><div class="label">Total Escrows</div></div>
+          <div class="stat-card"><div class="num">${s.active}</div><div class="label">Active</div></div>
+          <div class="stat-card"><div class="num">${s.disputed}</div><div class="label">Disputed</div></div>
+          <div class="stat-card"><div class="num">${s.pending_payout}</div><div class="label">Pending Payout</div></div>
+          <div class="stat-card"><div class="num">${s.disbursed}</div><div class="label">Disbursed</div></div>
+          <div class="stat-card"><div class="num">${s.cancelled}</div><div class="label">Cancelled</div></div>
+        </div>
+        <div class="card">
+          <div class="info-row"><span>Total Volume</span><strong>${formatUGX(s.total_volume)}</strong></div>
+          <div class="info-row"><span>Platform Revenue (5% fees)</span><strong style="color:#2e7d32;">${formatUGX(s.total_revenue)}</strong></div>
+        </div>`;
+    } catch (e) { el.innerHTML = '<div class="empty">Failed to load stats.</div>'; }
+  }
+
+  async function runSlaEnforcement() {
+    const el = document.getElementById('sla-result');
+    el.textContent = 'Running...';
+    try {
+      const r = await fetch(API + '/api/admin/sla/enforce', { method: 'POST', headers: adminHeaders() });
+      const d = await r.json();
+      el.innerHTML = `<strong>SLA Check Complete:</strong> ${d.warnings_sent} warning SMS sent, ${d.auto_cancelled} escrows auto-cancelled.`;
+    } catch (e) { el.textContent = 'SLA check failed.'; }
+  }
+
+  // ==========================================
+  // ARBITRATION DESK
+  // ==========================================
+  async function loadArbitration() {
+    const el = document.getElementById('arbitration-list');
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    try {
+      const r = await fetch(API + '/api/admin/arbitration', { headers: adminHeaders() });
+      const items = await r.json();
+      if (!items.length) { el.innerHTML = '<div class="empty">No disputes or stale escrows. All clear.</div>'; return; }
+      el.innerHTML = items.map(item => {
+        const badgeClass = item.queue_type === 'DISPUTED' ? 'badge-disputed'
+          : item.queue_type === 'STALE' ? 'badge-stale' : 'badge-timeout';
+        const typeLabel = item.queue_type === 'DISPUTED' ? 'DISPUTED'
+          : item.queue_type === 'STALE' ? 'STALE (72h+)' : 'DELIVERY TIMEOUT';
+        const trustClass = 'trust-' + (item.agent_trust?.tier || 'NONE');
+        const photo = item.warehouse?.photo_url ? `<img class="warehouse-photo" src="/uploads/${esc(item.warehouse.photo_url)}" alt="Warehouse photo">` : '';
+        const defaultAction = item.queue_type === 'STALE' ? '<div style="font-size:12px;color:#f57f17;margin-top:4px;">Recommended: Full Refund to Buyer (agent never dispatched)</div>'
+          : item.queue_type === 'DELIVERY_TIMEOUT' ? '<div style="font-size:12px;color:#e65100;margin-top:4px;">Recommended: Full Release to Agent (buyer likely ghosting)</div>' : '';
+        return `
+          <div class="card" style="border-left:4px solid ${badgeClass === 'badge-disputed' ? '#c62828' : badgeClass === 'badge-stale' ? '#f57f17' : '#e65100'};">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span class="card-title">${esc(item.crop)} — ${item.total_quantity_kg}kg</span>
+              <span class="badge ${badgeClass}">${typeLabel}</span>
+            </div>
+            <div class="info-row"><span>Batch</span><span>${esc(item.batch_code)}</span></div>
+            <div class="info-row"><span>Agent</span><span>${esc(item.agent_name)} (${esc(item.agent_district)})</span></div>
+            <div class="info-row"><span>Agent Trust</span><span class="trust-tier ${trustClass}">${item.agent_trust?.tier || 'NONE'} (${item.agent_trust?.score || 0})</span></div>
+            <div class="info-row"><span>Buyer</span><span>${esc(item.buyer_phone)}</span></div>
+            <div class="info-row"><span>Amount</span><strong>${formatUGX(item.total_amount)}</strong></div>
+            <div class="info-row"><span>Agent Payout</span><span>${formatUGX(item.agent_payout)}</span></div>
+            ${item.notes ? `<div class="info-row"><span>Reason</span><span style="color:#c62828;">${esc(item.notes)}</span></div>` : ''}
+            ${item.driver_phone ? `<div class="info-row"><span>Driver</span><span>${esc(item.driver_phone)} / ${esc(item.truck_plate_number)}</span></div>` : ''}
+            <div style="font-size:12px;color:#888;margin-top:4px;">
+              Created: ${formatDate(item.created_at)}
+              ${item.locked_at ? ' · Locked: ' + formatDate(item.locked_at) : ''}
+              ${item.dispatched_at ? ' · Dispatched: ' + formatDate(item.dispatched_at) : ''}
+            </div>
+            ${photo}
+            ${defaultAction}
+            <button class="btn btn-release" style="margin-top:8px;" onclick="openResolveModal('${esc(item.id)}', '${esc(item.crop)}', '${item.queue_type}')">Resolve</button>
+          </div>`;
+      }).join('');
+    } catch (e) { el.innerHTML = '<div class="empty">Failed to load arbitration queue.</div>'; }
+  }
+
+  function openResolveModal(escrowId, crop, queueType) {
+    currentResolveId = escrowId;
+    document.getElementById('resolve-modal-title').textContent = 'Resolve: ' + crop;
+    const defaultPct = queueType === 'DELIVERY_TIMEOUT' ? 100 : queueType === 'STALE' ? 0 : 80;
+    document.getElementById('partial-pct').value = defaultPct;
+    document.getElementById('resolve-notes').value = '';
+    document.getElementById('resolve-modal').classList.add('active');
+  }
+  function closeResolveModal() { document.getElementById('resolve-modal').classList.remove('active'); currentResolveId = null; }
+
+  async function submitResolve(action) {
+    const notes = document.getElementById('resolve-notes').value.trim();
+    if (!notes) return alert('Resolution notes are required.');
+    const body = { action, notes };
+    if (action === 'partial') body.release_percentage = Number(document.getElementById('partial-pct').value);
+    try {
+      const r = await fetch(API + '/api/admin/escrow/' + currentResolveId + '/resolve', {
+        method: 'PATCH', headers: adminHeaders(), body: JSON.stringify(body)
+      });
+      const d = await r.json();
+      if (!r.ok) return alert(d.error || 'Resolve failed');
+      closeResolveModal();
+      loadArbitration();
+      loadOverview();
+    } catch (e) { alert('Network error'); }
+  }
+
+  // ==========================================
+  // PAYOUT QUEUE
+  // ==========================================
+  async function loadPayouts() {
+    const el = document.getElementById('payouts-list');
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    try {
+      const r = await fetch(API + '/api/admin/payout/pending', { headers: adminHeaders() });
+      const items = await r.json();
+      if (!items.length) { el.innerHTML = '<div class="empty">No pending payouts. All clear.</div>'; return; }
+      el.innerHTML = items.map(item => `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <span class="card-title">${esc(item.agent_name)}</span>
+            <span class="badge badge-pending">PENDING</span>
+          </div>
+          <div class="info-row"><span>Phone</span><span>${esc(item.agent_phone)}</span></div>
+          <div class="info-row"><span>Amount</span><strong style="color:#2e7d32;">${formatUGX(item.agent_payout)}</strong></div>
+          <div class="info-row"><span>Batch</span><span>${esc(item.batch_code)} — ${esc(item.crop)} ${item.total_quantity_kg}kg</span></div>
+          <div class="info-row"><span>Released</span><span>${formatDate(item.released_at)}</span></div>
+          <button class="btn btn-disburse" style="margin-top:8px;" onclick="openDisburseModal('${esc(item.id)}', '${esc(item.agent_name)}', ${item.agent_payout})">Mark Disbursed</button>
+        </div>
+      `).join('');
+    } catch (e) { el.innerHTML = '<div class="empty">Failed to load payouts.</div>'; }
+  }
+
+  function openDisburseModal(escrowId, agentName, amount) {
+    currentDisburseId = escrowId;
+    document.getElementById('disburse-modal-body').innerHTML = `
+      <div class="info-row"><span>Agent</span><strong>${esc(agentName)}</strong></div>
+      <div class="info-row"><span>Amount</span><strong style="color:#2e7d32;">${formatUGX(amount)}</strong></div>
+    `;
+    document.getElementById('disburse-ref').value = '';
+    document.getElementById('disburse-modal').classList.add('active');
+  }
+  function closeDisburseModal() { document.getElementById('disburse-modal').classList.remove('active'); currentDisburseId = null; }
+
+  async function submitDisburse() {
+    const ref = document.getElementById('disburse-ref').value.trim();
+    if (!ref) return alert('MoMo receipt / network reference is required.');
+    try {
+      const r = await fetch(API + '/api/admin/payout/' + currentDisburseId + '/disburse', {
+        method: 'PATCH', headers: adminHeaders(), body: JSON.stringify({ disbursement_ref: ref })
+      });
+      const d = await r.json();
+      if (!r.ok) return alert(d.error || 'Disburse failed');
+      closeDisburseModal();
+      loadPayouts();
+      loadOverview();
+    } catch (e) { alert('Network error'); }
+  }
+
+  function exportCsv() {
+    window.open(API + '/api/admin/payout/export?secret=' + encodeURIComponent(adminSecret));
+  }
+
+  // Boot — restore session
+  const saved = sessionStorage.getItem('admin_secret');
+  if (saved) {
+    adminSecret = saved;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-screen').style.display = 'block';
+    loadOverview();
+  }
+</script>
+</body>
+</html>

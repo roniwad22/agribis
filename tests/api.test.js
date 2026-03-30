@@ -1191,6 +1191,195 @@ describe('Escrow: full happy path with driver details', () => {
     });
 });
 
+// ==========================================
+// LAYER 3: ADMIN OPS CENTER TESTS
+// ==========================================
+
+describe('Escrow: 4-hour cancel window', () => {
+    it('allows cancel within 4 hours', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700500001', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-4h1', '+256700500001');
+        setupBuyer(helpers, '+256700500002', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700500002', 500000);
+        helpers.lockEscrow(esc.id, 'MOMO_4H1');
+        // locked just now — within 4h
+        const result = helpers.cancelEscrow(esc.id, '+256700500002');
+        assert.ok(!result.error);
+        assert.equal(result.status, 'CANCELLED');
+    });
+
+    it('blocks cancel after 4 hours', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700500003', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-4h2', '+256700500003');
+        setupBuyer(helpers, '+256700500004', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700500004', 500000);
+        helpers.lockEscrow(esc.id, 'MOMO_4H2');
+        // backdate locked_at to 5 hours ago
+        const old = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+        db.prepare('UPDATE escrow_transactions SET locked_at = ? WHERE id = ?').run(old, esc.id);
+        const result = helpers.cancelEscrow(esc.id, '+256700500004');
+        assert.ok(result.error);
+        assert.ok(result.error.includes('Cancel window expired'));
+    });
+
+    it('admin can still cancel after 4 hours', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700500005', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-4h3', '+256700500005');
+        setupBuyer(helpers, '+256700500006', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700500006', 500000);
+        helpers.lockEscrow(esc.id, 'MOMO_4H3');
+        const old = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+        db.prepare('UPDATE escrow_transactions SET locked_at = ? WHERE id = ?').run(old, esc.id);
+        const result = helpers.cancelEscrow(esc.id, 'ADMIN');
+        assert.ok(!result.error);
+        assert.equal(result.status, 'CANCELLED');
+    });
+});
+
+describe('Escrow: 24h dispatch SLA', () => {
+    it('detects escrows needing 20h warning SMS', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700600001', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-sla1', '+256700600001');
+        setupBuyer(helpers, '+256700600002', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700600002', 300000);
+        helpers.lockEscrow(esc.id, 'MOMO_SLA1');
+        // backdate to 21 hours ago (between 20-24h)
+        const old = new Date(Date.now() - 21 * 60 * 60 * 1000).toISOString();
+        db.prepare('UPDATE escrow_transactions SET locked_at = ? WHERE id = ?').run(old, esc.id);
+        const warnings = helpers.getDispatchWarningEscrows();
+        assert.ok(warnings.some(w => w.id === esc.id));
+    });
+
+    it('auto-expires escrow after 24h', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700600003', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-sla2', '+256700600003');
+        setupBuyer(helpers, '+256700600004', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700600004', 300000);
+        helpers.lockEscrow(esc.id, 'MOMO_SLA2');
+        const old = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+        db.prepare('UPDATE escrow_transactions SET locked_at = ? WHERE id = ?').run(old, esc.id);
+        const expired = helpers.getDispatchExpiredEscrows();
+        assert.ok(expired.some(e => e.id === esc.id));
+        const result = helpers.autoExpireEscrow(esc.id);
+        assert.ok(result);
+        assert.equal(result.status, 'CANCELLED');
+    });
+});
+
+describe('Admin: disbursement with receipt ref', () => {
+    it('disburses with valid receipt ref', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700700001', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-dis1', '+256700700001');
+        setupBuyer(helpers, '+256700700002', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700700002', 1000000);
+        helpers.lockEscrow(esc.id, 'MOMO_D1');
+        helpers.dispatchEscrow(esc.id, '+256700700001', '0771111111', 'UAB 100Z');
+        helpers.releaseEscrow(esc.id, '+256700700002');
+        const result = helpers.disburseEscrow(esc.id, 'MTN-REF-12345');
+        assert.ok(!result.error);
+        assert.equal(result.payout_status, 'DISBURSED');
+        assert.equal(result.disbursement_ref, 'MTN-REF-12345');
+    });
+
+    it('rejects disburse without receipt ref', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700700003', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-dis2', '+256700700003');
+        setupBuyer(helpers, '+256700700004', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700700004', 500000);
+        helpers.lockEscrow(esc.id, 'MOMO_D2');
+        helpers.dispatchEscrow(esc.id, '+256700700003', '0772222222', 'UAB 200Z');
+        helpers.releaseEscrow(esc.id, '+256700700004');
+        const result = helpers.disburseEscrow(esc.id, '');
+        assert.ok(result.error);
+        assert.ok(result.error.includes('Disbursement reference'));
+    });
+
+    it('rejects double disburse', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700700005', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-dis3', '+256700700005');
+        setupBuyer(helpers, '+256700700006', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700700006', 400000);
+        helpers.lockEscrow(esc.id, 'MOMO_D3');
+        helpers.dispatchEscrow(esc.id, '+256700700005', '0773333333', 'UAB 300Z');
+        helpers.releaseEscrow(esc.id, '+256700700006');
+        helpers.disburseEscrow(esc.id, 'MTN-REF-111');
+        const result = helpers.disburseEscrow(esc.id, 'MTN-REF-222');
+        assert.ok(result.error);
+        assert.ok(result.error.includes('Already disbursed'));
+    });
+});
+
+describe('Admin: stats and arbitration queue', () => {
+    it('returns platform stats', () => {
+        const { helpers } = makeApp();
+        const stats = helpers.getAdminStats();
+        assert.equal(typeof stats.total, 'number');
+        assert.equal(typeof stats.total_revenue, 'number');
+        assert.equal(typeof stats.pending_payout, 'number');
+    });
+
+    it('arbitration queue includes disputed escrows', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700800001', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-arb1', '+256700800001');
+        setupBuyer(helpers, '+256700800002', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700800002', 600000);
+        helpers.lockEscrow(esc.id, 'MOMO_A1');
+        helpers.dispatchEscrow(esc.id, '+256700800001', '0774444444', 'UAB 400Z');
+        helpers.disputeEscrow(esc.id, '+256700800002', 'Bad quality');
+        const queue = helpers.getArbitrationQueue();
+        const found = queue.find(q => q.id === esc.id);
+        assert.ok(found);
+        assert.equal(found.queue_type, 'DISPUTED');
+        assert.ok(found.agent_trust);
+    });
+
+    it('delivery timeout escrows appear in arbitration queue', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700800003', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-arb2', '+256700800003');
+        setupBuyer(helpers, '+256700800004', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700800004', 400000);
+        helpers.lockEscrow(esc.id, 'MOMO_A2');
+        helpers.dispatchEscrow(esc.id, '+256700800003', '0775555555', 'UAB 500Z');
+        // backdate dispatch to 73h ago
+        const old = new Date(Date.now() - 73 * 60 * 60 * 1000).toISOString();
+        db.prepare('UPDATE escrow_transactions SET dispatched_at = ? WHERE id = ?').run(old, esc.id);
+        const queue = helpers.getArbitrationQueue();
+        const found = queue.find(q => q.id === esc.id);
+        assert.ok(found);
+        assert.equal(found.queue_type, 'DELIVERY_TIMEOUT');
+    });
+});
+
+describe('Admin: CSV export formatting', () => {
+    it('strips + from phone and adds narration', async () => {
+        const { app, helpers, db } = makeApp({ adminSecret: TEST_ADMIN_SECRET });
+        setupAgent(helpers, '+256700900001', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-csv1', '+256700900001');
+        setupBuyer(helpers, '+256700900002', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700900002', 200000);
+        helpers.lockEscrow(esc.id, 'MOMO_CSV');
+        helpers.dispatchEscrow(esc.id, '+256700900001', '0776666666', 'UAB 600Z');
+        helpers.releaseEscrow(esc.id, '+256700900002');
+        const res = await req(app, 'get', '/api/admin/payout/export', null, { 'x-admin-secret': TEST_ADMIN_SECRET });
+        assert.equal(res.status, 200);
+        const csv = res.text;
+        assert.ok(csv.includes('phone,amount,narration'));
+        assert.ok(csv.includes('256700900001')); // no +
+        assert.ok(!csv.includes('+256700900001'));
+        assert.ok(csv.includes('AgriBridge Payout'));
+    });
+});
+
 describe('Farmer listing dispatches leads to agents', () => {
     it('returns agents_notified count on farmer listing', async () => {
         const { app, helpers } = makeApp();
