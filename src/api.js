@@ -100,6 +100,17 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         }
     });
 
+    const ALLOWED_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.heic']);
+    const uploadPhoto = multer({
+        storage,
+        limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+        fileFilter: (req, file, cb) => {
+            const ext = path.extname(file.originalname).toLowerCase();
+            if (file.mimetype.startsWith('image/') && ALLOWED_IMAGE_EXTS.has(ext)) cb(null, true);
+            else cb(new Error('Only image files (JPG, PNG, WebP) are allowed'));
+        }
+    });
+
     // ==========================================
     // AGENT REGISTRATION & LOGIN (OTP-verified)
     // ==========================================
@@ -603,14 +614,32 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         const batch = helpers.getBatch(req.params.id);
         if (!batch) return res.status(404).json({ error: 'Batch not found' });
         const purchases = helpers.getBatchTraceability(batch.id);
+
+        // Include warehouse receipt if lodged
+        const warehouseReceipt = helpers.getWarehouseReceipt(batch.id);
+        const storageCost = warehouseReceipt ? helpers.getWarehouseStorageCost(batch.id) : null;
+
+        // Include agent trust tier
+        const trustScore = helpers.calculateTrustScore(batch.agent_phone);
+
         res.json({
             batch_code: batch.batch_code,
+            agent_trust: trustScore ? { tier: trustScore.tier, suspended: trustScore.suspended, completed_batches: trustScore.details.completed_batches } : null,
             crop: batch.crop,
             total_quantity_kg: batch.total_quantity_kg,
             overall_grade: batch.overall_grade,
             avg_moisture: batch.avg_moisture,
             status: batch.status,
             created_at: batch.created_at,
+            warehouse: warehouseReceipt ? {
+                subcounty_location: warehouseReceipt.subcounty_location,
+                facility_type: warehouseReceipt.facility_type,
+                owner_name: warehouseReceipt.owner_name,
+                photo_url: warehouseReceipt.photo_url,
+                date_lodged: warehouseReceipt.date_lodged,
+                daily_storage_fee: warehouseReceipt.daily_storage_fee,
+                storage_cost: storageCost
+            } : null,
             farmers: purchases.map(p => ({
                 name: p.farmer_name || 'Unknown',
                 parish: p.parish,
@@ -644,6 +673,281 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         helpers.addCommission(auth.agent.phone, batch.id, platformFee > 0 ? margin - platformFee : 0);
 
         res.json({ success: true, cost_basis: costBasis, sale_price: parseInt(sale_price), margin, platform_fee: platformFee });
+    });
+
+    // ==========================================
+    // AGGREGATOR TRUST SCORE
+    // ==========================================
+
+    // GET /api/agent/trust-score — Agent's own trust score
+    router.get('/agent/trust-score', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const auth = authenticateAgent(phone, pin);
+        if (auth.error) return res.status(403).json({ error: auth.error });
+        const score = helpers.calculateTrustScore(auth.agent.phone);
+        if (!score) return res.status(404).json({ error: 'Agent not found' });
+        res.json(score);
+    });
+
+    // GET /api/agents/:phone/trust-score — Public trust score (for buyers browsing)
+    router.get('/agents/:phone/trust-score', (req, res) => {
+        const score = helpers.calculateTrustScore(req.params.phone);
+        if (!score) return res.status(404).json({ error: 'Agent not found' });
+        // Public view: hide internal details, show tier + key stats
+        res.json({
+            phone: score.phone,
+            name: score.name,
+            tier: score.tier,
+            suspended: score.suspended,
+            completed_batches: score.details.completed_batches,
+            warehouse_ratio: score.details.warehouse_ratio,
+            dispute_ratio: score.details.dispute_ratio
+        });
+    });
+
+    // POST /api/batches/:id/dispute — Dispute a batch (buyer or admin)
+    router.post('/batches/:id/dispute', (req, res) => {
+        const { reason } = req.body;
+        if (!reason) return res.status(400).json({ error: 'reason required' });
+        const result = helpers.disputeBatch(req.params.id, reason);
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json({ success: true, message: 'Batch disputed. Agent trust score frozen until resolved.' });
+    });
+
+    // PATCH /api/admin/batches/:id/resolve-dispute — Resolve a dispute (admin only)
+    router.patch('/admin/batches/:id/resolve-dispute', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        const { resolution } = req.body;
+        const result = helpers.resolveDispute(req.params.id, resolution);
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json({ success: true, message: 'Dispute resolved. Agent trust score restored.' });
+    });
+
+    // ==========================================
+    // WAREHOUSE RECEIPTS
+    // ==========================================
+
+    // POST /api/batches/:id/lodge — Lodge batch at warehouse (with mandatory photo)
+    router.post('/batches/:id/lodge', (req, res) => {
+        uploadPhoto.single('photo')(req, res, (err) => {
+            if (err) return res.status(400).json({ error: err.message });
+            const { phone, pin } = extractCredentials(req);
+            const auth = authenticateAgent(phone, pin);
+            if (auth.error) return res.status(403).json({ error: auth.error });
+
+            const batch = helpers.getBatch(req.params.id);
+            if (!batch) return res.status(404).json({ error: 'Batch not found' });
+            if (batch.agent_phone !== auth.agent.phone) return res.status(403).json({ error: 'Not your batch' });
+            if (batch.status === 'sold') return res.status(400).json({ error: 'Batch already sold' });
+
+            // Check if already warehoused
+            const existing = helpers.getWarehouseReceipt(batch.id);
+            if (existing) return res.status(400).json({ error: 'Batch already lodged at a warehouse' });
+
+            // Mandatory photo
+            if (!req.file) return res.status(400).json({ error: 'Photo is required. Snap a photo of the stacked bags.' });
+
+            const { subcounty_location, facility_type, owner_name, daily_storage_fee, notes } = req.body;
+            if (!subcounty_location) return res.status(400).json({ error: 'subcounty_location required' });
+
+            const receipt = {
+                id: crypto.randomUUID(),
+                batch_id: batch.id,
+                agent_phone: auth.agent.phone,
+                subcounty_location,
+                facility_type: facility_type || 'Rented Room',
+                owner_name: owner_name || null,
+                photo_url: `/uploads/${req.file.filename}`,
+                daily_storage_fee: daily_storage_fee ? parseInt(daily_storage_fee) : 0,
+                date_lodged: new Date().toISOString(),
+                notes: notes || null
+            };
+            helpers.lodgeBatch(receipt);
+
+            res.json({
+                success: true,
+                receipt: {
+                    id: receipt.id,
+                    batch_code: batch.batch_code,
+                    subcounty_location: receipt.subcounty_location,
+                    facility_type: receipt.facility_type,
+                    photo_url: receipt.photo_url,
+                    daily_storage_fee: receipt.daily_storage_fee
+                }
+            });
+        });
+    });
+
+    // GET /api/batches/:id/warehouse — Get warehouse receipt for a batch
+    router.get('/batches/:id/warehouse', (req, res) => {
+        const batch = helpers.getBatch(req.params.id);
+        if (!batch) return res.status(404).json({ error: 'Batch not found' });
+        const receipt = helpers.getWarehouseReceipt(batch.id);
+        if (!receipt) return res.json({ warehoused: false });
+        const cost = helpers.getWarehouseStorageCost(batch.id);
+        res.json({ warehoused: true, ...receipt, storage_cost: cost });
+    });
+
+    // GET /api/agent/warehouse-receipts — Agent's warehouse receipts
+    router.get('/agent/warehouse-receipts', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const auth = authenticateAgent(phone, pin);
+        if (auth.error) return res.status(403).json({ error: auth.error });
+        res.json(helpers.getAgentWarehouseReceipts(auth.agent.phone));
+    });
+
+    // ==========================================
+    // MARKETPLACE — Browse available batches (agent identity masked)
+    // ==========================================
+    router.get('/marketplace', (req, res) => {
+        const batches = helpers.getMarketplaceBatches();
+        res.json(batches);
+    });
+
+    router.get('/marketplace/:id', (req, res) => {
+        const detail = helpers.getMarketplaceBatchDetail(req.params.id);
+        if (!detail) return res.status(404).json({ error: 'Batch not found or not available' });
+        // Mask agent identity — buyer sees district + trust tier, not phone
+        const { agent_phone, ...safe } = detail;
+        res.json(safe);
+    });
+
+    // ==========================================
+    // ESCROW LIFECYCLE
+    // ==========================================
+
+    // POST /api/escrow — Buyer initiates purchase (creates escrow)
+    router.post('/escrow', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const buyer = authenticateBuyer(phone, pin) || helpers.authenticateProfile(phone, pin);
+        if (!buyer) return res.status(403).json({ error: 'Invalid buyer credentials' });
+        const { batch_id, total_amount } = req.body;
+        if (!batch_id || !total_amount) return res.status(400).json({ error: 'batch_id and total_amount required' });
+        const amount = parseInt(total_amount);
+        if (isNaN(amount) || amount < 1000) return res.status(400).json({ error: 'total_amount must be at least 1000 UGX' });
+        const result = helpers.createEscrow(batch_id, buyer.phone, amount);
+        if (result.error) return res.status(400).json({ error: result.error });
+        // In sandbox mode, auto-advance to FUNDS_LOCKED (simulates MoMo payment)
+        if (isSandbox) {
+            const locked = helpers.lockEscrow(result.id, 'SANDBOX_AUTO_' + Date.now());
+            if (!locked.error) {
+                result.status = 'FUNDS_LOCKED';
+                result.momo_reference = locked.momo_reference || 'SANDBOX_AUTO_' + Date.now();
+            }
+        }
+        // SMS: notify agent of new order
+        sendSms(sms, result.agent_phone, `Agri-Bridge: A buyer has placed an order for your batch. Amount: UGX ${amount}. Status: ${result.status}. Check your Agent Pro dashboard.`);
+        res.json(result);
+    });
+
+    // POST /api/escrow/:id/momo-callback — MoMo webhook (production) or dev simulate
+    router.post('/escrow/:id/momo-callback', (req, res) => {
+        const { reference, status: payStatus } = req.body;
+        if (payStatus !== 'SUCCESSFUL') return res.status(400).json({ error: 'Payment not successful' });
+        const result = helpers.lockEscrow(req.params.id, reference);
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json({ success: true, escrow_status: 'FUNDS_LOCKED' });
+    });
+
+    // POST /api/escrow/:id/dispatch — Agent marks dispatched (requires driver_phone + truck_plate_number)
+    router.post('/escrow/:id/dispatch', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const auth = authenticateAgent(phone, pin);
+        if (auth.error) return res.status(403).json({ error: auth.error });
+        const { driver_phone, truck_plate_number } = req.body;
+        const result = helpers.dispatchEscrow(req.params.id, auth.agent.phone, driver_phone, truck_plate_number);
+        if (result.error) return res.status(400).json({ error: result.error });
+        // SMS: notify buyer that produce is on its way with driver details
+        sendSms(sms, result.buyer_phone, `Agri-Bridge: Your order has been dispatched! Driver: ${result.driver_phone}, Truck: ${result.truck_plate_number}. Confirm delivery when you receive it.`);
+        res.json({ success: true, escrow_status: 'IN_TRANSIT', driver_phone: result.driver_phone, truck_plate_number: result.truck_plate_number });
+    });
+
+    // POST /api/escrow/:id/release — Buyer confirms delivery and releases funds
+    router.post('/escrow/:id/release', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const buyer = authenticateBuyer(phone, pin) || helpers.authenticateProfile(phone, pin);
+        if (!buyer) return res.status(403).json({ error: 'Invalid buyer credentials' });
+        const { confirm } = req.body;
+        if (confirm !== true && confirm !== 'true') return res.status(400).json({ error: 'You must explicitly confirm release (confirm: true)' });
+        const result = helpers.releaseEscrow(req.params.id, buyer.phone);
+        if (result.error) return res.status(400).json({ error: result.error });
+        // SMS: notify agent that funds are released
+        sendSms(sms, result.agent_phone, `Agri-Bridge: Buyer has confirmed delivery! UGX ${result.agent_payout} will be sent to your MoMo. Thank you!`);
+        res.json({ success: true, escrow_status: 'RELEASED' });
+    });
+
+    // POST /api/escrow/:id/cancel — Buyer cancels (before dispatch only)
+    router.post('/escrow/:id/cancel', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const buyer = authenticateBuyer(phone, pin) || helpers.authenticateProfile(phone, pin);
+        if (!buyer) return res.status(403).json({ error: 'Invalid buyer credentials' });
+        const result = helpers.cancelEscrow(req.params.id, buyer.phone);
+        if (result.error) return res.status(400).json({ error: result.error });
+        // SMS: notify agent that order was cancelled
+        sendSms(sms, result.agent_phone, `Agri-Bridge: Order cancelled by buyer. Your batch is back on the marketplace.`);
+        res.json({ success: true, escrow_status: 'CANCELLED' });
+    });
+
+    // POST /api/escrow/:id/dispute — Buyer disputes
+    router.post('/escrow/:id/dispute', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const buyer = authenticateBuyer(phone, pin) || helpers.authenticateProfile(phone, pin);
+        if (!buyer) return res.status(403).json({ error: 'Invalid buyer credentials' });
+        const { reason } = req.body;
+        if (!reason) return res.status(400).json({ error: 'reason required' });
+        const result = helpers.disputeEscrow(req.params.id, buyer.phone, reason);
+        if (result.error) return res.status(400).json({ error: result.error });
+        // SMS: notify agent of dispute
+        sendSms(sms, result.agent_phone, `Agri-Bridge: DISPUTE filed on your order. Reason: ${reason}. Your trust score is frozen until resolved. Contact admin.`);
+        res.json({ success: true, escrow_status: 'DISPUTED' });
+    });
+
+    // GET /api/escrow/buyer — Buyer's escrow list
+    router.get('/escrow/buyer', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const buyer = authenticateBuyer(phone, pin) || helpers.authenticateProfile(phone, pin);
+        if (!buyer) return res.status(403).json({ error: 'Invalid buyer credentials' });
+        res.json(helpers.getBuyerEscrows(buyer.phone));
+    });
+
+    // GET /api/escrow/agent — Agent's escrow list
+    router.get('/escrow/agent', (req, res) => {
+        const { phone, pin } = extractCredentials(req);
+        const auth = authenticateAgent(phone, pin);
+        if (auth.error) return res.status(403).json({ error: auth.error });
+        res.json(helpers.getAgentEscrows(auth.agent.phone));
+    });
+
+    // GET /api/escrow/:id — Get escrow details
+    router.get('/escrow/:id', (req, res) => {
+        const esc = helpers.getEscrow(req.params.id);
+        if (!esc) return res.status(404).json({ error: 'Escrow not found' });
+        res.json(esc);
+    });
+
+    // PATCH /api/admin/escrow/:id/resolve — Admin resolves disputed escrow (release, refund, or partial)
+    router.patch('/admin/escrow/:id/resolve', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        const { action, notes, release_percentage } = req.body;
+        if (!['release', 'refund', 'partial'].includes(action)) return res.status(400).json({ error: 'action must be release, refund, or partial' });
+        if (action === 'partial' && (release_percentage === undefined || release_percentage === null)) return res.status(400).json({ error: 'partial action requires release_percentage (0-100)' });
+        const result = helpers.adminResolveEscrow(req.params.id, action, notes, release_percentage);
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json(result);
+    });
+
+    // GET /api/admin/escrow/stale — Admin view stale escrows (72h+)
+    router.get('/admin/escrow/stale', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        res.json(helpers.getStaleEscrows());
+    });
+
+    // POST /api/escrow/:id/simulate-payment — Dev-only: simulate MoMo payment
+    router.post('/escrow/:id/simulate-payment', (req, res) => {
+        if (!isSandbox) return res.status(403).json({ error: 'Only available in sandbox mode' });
+        const result = helpers.lockEscrow(req.params.id, 'DEV_SIMULATE_' + Date.now());
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json({ success: true, escrow_status: 'FUNDS_LOCKED', momo_reference: result.momo_reference });
     });
 
     // POST /api/listings/:id/video  (credentials via x-phone/x-pin headers or query params)

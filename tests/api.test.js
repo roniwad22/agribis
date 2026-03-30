@@ -1031,6 +1031,166 @@ describe('POST /api/batches/:id/sell', () => {
     });
 });
 
+// ==========================================
+// ESCROW MARKETPLACE TESTS
+// ==========================================
+
+// Helper: create batch and set it to 'closed' status (createBatch forces 'open')
+function makeClosedBatch(helpers, db, id, agentPhone) {
+    helpers.createBatch({ id, agent_phone: agentPhone, batch_code: 'B-' + id, crop: 'Maize', total_quantity_kg: 100, purchase_count: 1, created_at: new Date().toISOString() });
+    db.prepare("UPDATE batches SET status = 'closed' WHERE id = ?").run(id);
+    return id;
+}
+
+describe('Escrow: dispatch requires driver_phone and truck_plate_number', () => {
+    it('blocks dispatch without driver_phone', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700100001', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-drv1', '+256700100001');
+        setupBuyer(helpers, '+256700100002', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700100002', 500000);
+        helpers.lockEscrow(esc.id, 'MOMO_123');
+        const result = helpers.dispatchEscrow(esc.id, '+256700100001', '', 'UAB 123X');
+        assert.ok(result.error);
+        assert.ok(result.error.includes('Driver phone'));
+    });
+
+    it('blocks dispatch without truck_plate_number', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700100003', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-drv2', '+256700100003');
+        setupBuyer(helpers, '+256700100004', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700100004', 300000);
+        helpers.lockEscrow(esc.id, 'MOMO_456');
+        const result = helpers.dispatchEscrow(esc.id, '+256700100003', '0771234567', '');
+        assert.ok(result.error);
+        assert.ok(result.error.includes('Truck plate'));
+    });
+
+    it('succeeds with both driver_phone and truck_plate_number', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700100005', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-drv3', '+256700100005');
+        setupBuyer(helpers, '+256700100006', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700100006', 400000);
+        helpers.lockEscrow(esc.id, 'MOMO_789');
+        const result = helpers.dispatchEscrow(esc.id, '+256700100005', '0771234567', 'uab 456y');
+        assert.ok(!result.error);
+        assert.equal(result.status, 'IN_TRANSIT');
+        assert.equal(result.driver_phone, '0771234567');
+        assert.equal(result.truck_plate_number, 'UAB 456Y');
+    });
+});
+
+describe('Escrow: partial dispute resolution', () => {
+    it('admin resolves with partial split', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700200001', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-part1', '+256700200001');
+        setupBuyer(helpers, '+256700200002', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700200002', 1000000);
+        helpers.lockEscrow(esc.id, 'MOMO_P1');
+        helpers.dispatchEscrow(esc.id, '+256700200001', '0771111111', 'UAB 999Z');
+        helpers.disputeEscrow(esc.id, '+256700200002', 'Grade 2 instead of Grade 1');
+        const result = helpers.adminResolveEscrow(esc.id, 'partial', 'Quality discount', 80);
+        assert.ok(result.success);
+        assert.equal(result.action, 'partial');
+        assert.equal(result.release_percentage, 80);
+        assert.equal(result.released_amount, 760000);
+        assert.equal(result.refunded_amount, 190000);
+    });
+
+    it('rejects partial without release_percentage', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700200003', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-part2', '+256700200003');
+        setupBuyer(helpers, '+256700200004', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700200004', 500000);
+        helpers.lockEscrow(esc.id, 'MOMO_P2');
+        helpers.dispatchEscrow(esc.id, '+256700200003', '0772222222', 'UBA 111A');
+        helpers.disputeEscrow(esc.id, '+256700200004', 'Short weight');
+        const result = helpers.adminResolveEscrow(esc.id, 'partial', 'test');
+        assert.ok(result.error);
+        assert.ok(result.error.includes('release_percentage'));
+    });
+
+    it('rejects invalid release_percentage (>100)', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700200005', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-part3', '+256700200005');
+        setupBuyer(helpers, '+256700200006', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700200006', 600000);
+        helpers.lockEscrow(esc.id, 'MOMO_P3');
+        helpers.dispatchEscrow(esc.id, '+256700200005', '0773333333', 'UBA 222B');
+        helpers.disputeEscrow(esc.id, '+256700200006', 'Damaged');
+        const result = helpers.adminResolveEscrow(esc.id, 'partial', 'test', 150);
+        assert.ok(result.error);
+    });
+});
+
+describe('Escrow: 72h stale threshold', () => {
+    it('does not flag escrow locked less than 72h ago', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700300001', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-stale1', '+256700300001');
+        setupBuyer(helpers, '+256700300002', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700300002', 200000);
+        helpers.lockEscrow(esc.id, 'MOMO_S1');
+        const stale = helpers.getStaleEscrows();
+        assert.equal(stale.filter(s => s.id === esc.id).length, 0);
+    });
+
+    it('flags escrow locked more than 72h ago', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700300003', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-stale2', '+256700300003');
+        setupBuyer(helpers, '+256700300004', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700300004', 300000);
+        helpers.lockEscrow(esc.id, 'MOMO_S2');
+        const oldTime = new Date(Date.now() - 73 * 60 * 60 * 1000).toISOString();
+        db.prepare('UPDATE escrow_transactions SET locked_at = ? WHERE id = ?').run(oldTime, esc.id);
+        const stale = helpers.getStaleEscrows();
+        assert.ok(stale.some(s => s.id === esc.id));
+    });
+});
+
+describe('Escrow: full happy path with driver details', () => {
+    it('create -> lock -> dispatch(driver+plate) -> release', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700400001', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-happy', '+256700400001');
+        setupBuyer(helpers, '+256700400002', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700400002', 1000000);
+        assert.equal(esc.status, 'PENDING_PAYMENT');
+        assert.equal(esc.platform_fee, 50000);
+        assert.equal(esc.agent_payout, 950000);
+
+        const locked = helpers.lockEscrow(esc.id, 'MOMO_HAPPY');
+        assert.equal(locked.status, 'FUNDS_LOCKED');
+
+        const dispatched = helpers.dispatchEscrow(esc.id, '+256700400001', '0779876543', 'UAX 789Z');
+        assert.equal(dispatched.status, 'IN_TRANSIT');
+        assert.equal(dispatched.driver_phone, '0779876543');
+        assert.equal(dispatched.truck_plate_number, 'UAX 789Z');
+
+        const released = helpers.releaseEscrow(esc.id, '+256700400002');
+        assert.equal(released.status, 'RELEASED');
+    });
+
+    it('agent cannot release funds', () => {
+        const { helpers, db } = makeApp();
+        setupAgent(helpers, '+256700400003', '1234', 'Mityana');
+        const batchId = makeClosedBatch(helpers, db, 'b-norel', '+256700400003');
+        setupBuyer(helpers, '+256700400004', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700400004', 500000);
+        helpers.lockEscrow(esc.id, 'MOMO_NR');
+        helpers.dispatchEscrow(esc.id, '+256700400003', '0771111111', 'UAB 111A');
+        const result = helpers.releaseEscrow(esc.id, '+256700400003');
+        assert.ok(result.error);
+        assert.ok(result.error.includes('Not your escrow'));
+    });
+});
+
 describe('Farmer listing dispatches leads to agents', () => {
     it('returns agents_notified count on farmer listing', async () => {
         const { app, helpers } = makeApp();

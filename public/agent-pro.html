@@ -186,13 +186,29 @@
       </div>
     </div>
 
+    <!-- Trust Score Badge -->
+    <div id="trust-badge" class="card" style="display:none;text-align:center;padding:12px;margin-bottom:14px;">
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+        <div id="trust-icon" style="font-size:28px;">🥉</div>
+        <div>
+          <div id="trust-tier" style="font-size:18px;font-weight:bold;">BRONZE</div>
+          <div id="trust-subtitle" style="font-size:12px;color:#888;">Verified & Active</div>
+        </div>
+      </div>
+      <div id="trust-progress" style="margin-top:10px;font-size:12px;color:#666;"></div>
+      <div id="trust-suspended" style="display:none;margin-top:8px;" class="alert warning"></div>
+    </div>
+
     <div style="display:flex;gap:8px;margin-bottom:8px;">
       <button class="btn" style="flex:1;margin:0;padding:10px;font-size:13px;" onclick="showListings()">📋 Listings</button>
       <button class="btn" style="flex:1;margin:0;padding:10px;font-size:13px;background:#2e7d32;" onclick="showCommissions()">💰 Commissions</button>
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
       <button class="btn orange" style="flex:1;margin:0;padding:10px;font-size:13px;" onclick="showPurchaseForm()">🛒 Log Purchase</button>
       <button class="btn" style="flex:1;margin:0;padding:10px;font-size:13px;background:#6a1b9a;" onclick="showBatches()">📦 Batches</button>
+    </div>
+    <div style="margin-bottom:14px;">
+      <button class="btn" style="width:100%;margin:0;padding:10px;font-size:13px;background:#1565c0;" onclick="showEscrowOrders()">💳 Escrow Orders</button>
     </div>
 
     <div id="dash-listings">
@@ -423,6 +439,64 @@
   <div class="content" id="batch-detail-content"></div>
 </div>
 
+<!-- SCREEN: Lodge at Warehouse -->
+<div id="screen-lodge" class="screen">
+  <header>
+    <button class="back" onclick="showScreen('batch-detail')">&#8592;</button>
+    <h1>Lodge at Warehouse</h1>
+  </header>
+  <div class="content">
+    <div class="card">
+      <h3 style="margin-bottom:12px;">🏪 Warehouse Details</h3>
+      <p style="font-size:13px;color:#666;margin-bottom:16px;">Log where this batch is stored. A photo of the stacked bags is required.</p>
+      <label>Sub-county / Location</label>
+      <input type="text" id="lodge-location" placeholder="e.g. Kigulu Sub-county, Iganga">
+      <label>Facility Type</label>
+      <select id="lodge-type">
+        <option value="Rented Room">Rented Room</option>
+        <option value="Co-op Shed">Co-op Shed</option>
+        <option value="Own Store">Own Store</option>
+        <option value="Trading Centre Store">Trading Centre Store</option>
+        <option value="School Store">School Store</option>
+      </select>
+      <label>Owner / Landlord Name (if rented)</label>
+      <input type="text" id="lodge-owner" placeholder="e.g. Mukasa Hardware">
+      <label>Daily Storage Fee (UGX)</label>
+      <input type="number" id="lodge-fee" placeholder="e.g. 5000" value="0">
+      <label>Photo of Stacked Bags <span style="color:#c62828;">(Required)</span></label>
+      <input type="file" id="lodge-photo" accept="image/*" capture="environment" style="margin-bottom:14px;">
+      <label>Notes</label>
+      <input type="text" id="lodge-notes" placeholder="Any observations...">
+      <div id="lodge-error" style="display:none;"></div>
+      <div id="lodge-success" style="display:none;"></div>
+      <button class="btn green" onclick="submitLodge()">🏪 Lodge Batch</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: Escrow Orders -->
+<div id="screen-escrow-orders" class="screen">
+  <header>
+    <button class="back" onclick="showScreen('dash')">&#8592;</button>
+    <h1>Escrow Orders</h1>
+  </header>
+  <div class="content">
+    <div id="escrow-orders-list">
+      <div class="spinner">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: Escrow Detail -->
+<div id="screen-escrow-detail" class="screen">
+  <header>
+    <button class="back" onclick="showScreen('escrow-orders')">&#8592;</button>
+    <h1 id="escrow-detail-title">Escrow Detail</h1>
+  </header>
+  <div class="content" id="escrow-detail-content">
+  </div>
+</div>
+
 <script>
   const API = '';
   let agentPhone = '', agentPin = '', agentName = '';
@@ -478,9 +552,10 @@
   // ── Dashboard ─────────────────────────────────────────────────────────────
   async function loadDashboard() {
     try {
-      const [listRes, recRes] = await Promise.all([
+      const [listRes, recRes, trustRes] = await Promise.all([
         fetch(`${API}/api/agent/listings`, { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } }),
-        fetch(`${API}/api/agent/record`,   { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } })
+        fetch(`${API}/api/agent/record`,   { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } }),
+        fetch(`${API}/api/agent/trust-score`, { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } })
       ]);
       allListings = await listRes.json();
       const rec   = await recRes.json();
@@ -492,11 +567,59 @@
       document.getElementById('stat-earned').textContent   =
         rec.commissions_total ? (rec.commissions_total / 1000).toFixed(0) + 'K' : '0';
 
+      // Trust Score Badge
+      if (trustRes.ok) {
+        const trust = await trustRes.json();
+        renderTrustBadge(trust);
+      }
+
       showListings();
     } catch (e) {
       document.getElementById('dash-listings').innerHTML =
         '<div class="alert error">Failed to load. Is the server running?</div>';
     }
+  }
+
+  function renderTrustBadge(trust) {
+    const badge = document.getElementById('trust-badge');
+    const tierConfig = {
+      'NONE':      { icon: '⬜', color: '#999',    subtitle: 'Log your first purchase to earn Bronze' },
+      'BRONZE':    { icon: '🥉', color: '#cd7f32', subtitle: 'Verified & Active' },
+      'SILVER':    { icon: '🥈', color: '#8a8a8a', subtitle: 'Trusted Aggregator' },
+      'GOLD':      { icon: '🥇', color: '#d4a017', subtitle: 'Premium Aggregator — Credit Eligible' },
+      'SUSPENDED': { icon: '⚠️', color: '#c62828', subtitle: 'Trust score frozen — dispute pending' },
+      'INACTIVE':  { icon: '⬜', color: '#999',    subtitle: 'Account inactive' }
+    };
+    const cfg = tierConfig[trust.tier] || tierConfig['NONE'];
+    document.getElementById('trust-icon').textContent = cfg.icon;
+    document.getElementById('trust-tier').textContent = trust.tier;
+    document.getElementById('trust-tier').style.color = cfg.color;
+    document.getElementById('trust-subtitle').textContent = cfg.subtitle;
+
+    // Progress hints — show the ladder
+    const d = trust.details;
+    let progress = '';
+    if (trust.tier === 'NONE' || trust.tier === 'INACTIVE') {
+      progress = 'Log a farm-gate purchase to reach Bronze.';
+    } else if (trust.calculated_tier === 'BRONZE') {
+      progress = `${d.completed_batches}/6 batches completed toward Silver.`;
+    } else if (trust.calculated_tier === 'SILVER') {
+      progress = `${d.completed_batches}/21 batches · ${d.warehouse_ratio}% warehoused toward Gold.`;
+    } else if (trust.calculated_tier === 'GOLD') {
+      progress = `${d.completed_batches} batches · ${d.warehouse_ratio}% warehoused · ${d.dispute_ratio}% disputes.`;
+    }
+    document.getElementById('trust-progress').textContent = progress;
+
+    // Suspension warning
+    const susEl = document.getElementById('trust-suspended');
+    if (trust.suspended) {
+      susEl.style.display = 'block';
+      susEl.textContent = `⚠ ${d.active_disputes} active dispute(s). Your ${trust.calculated_tier} badge is hidden until resolved. Contact admin.`;
+    } else {
+      susEl.style.display = 'none';
+    }
+
+    badge.style.display = 'block';
   }
 
   function showListings() {
@@ -894,16 +1017,19 @@
       const res = await fetch(`${API}/api/agent/batches`, { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } });
       const list = await res.json();
       if (!list.length) { el.innerHTML = '<div class="empty">No batches yet. Create one from your purchases.</div>'; return; }
-      el.innerHTML = list.map(b => `
-        <div class="listing-row" style="border-left-color:${b.status === 'sold' ? '#2e7d32' : b.status === 'closed' ? '#888' : '#6a1b9a'}; cursor:pointer;" onclick="openBatchDetail('${escHtml(b.id)}')">
+      el.innerHTML = list.map(b => {
+        const statusColor = b.status === 'sold' ? '#2e7d32' : b.status === 'warehoused' ? '#f57c00' : b.status === 'closed' ? '#888' : '#6a1b9a';
+        return `
+        <div class="listing-row" style="border-left-color:${statusColor}; cursor:pointer;" onclick="openBatchDetail('${escHtml(b.id)}')">
           <div class="detail">📦 ${escHtml(b.batch_code)} — ${escHtml(b.crop)}</div>
           <div class="meta">
             ${b.total_quantity_kg}kg · ${b.purchase_count} purchases
             ${b.overall_grade ? ' · Grade ' + escHtml(b.overall_grade) : ''}
             ${b.avg_moisture ? ' · 💧' + b.avg_moisture + '%' : ''}
-            · <span style="font-weight:bold;color:${b.status === 'sold' ? '#2e7d32' : '#6a1b9a'};">${b.status.toUpperCase()}</span>
+            · <span style="font-weight:bold;color:${statusColor};">${b.status === 'warehoused' ? '🏪 WAREHOUSED' : b.status.toUpperCase()}</span>
           </div>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     } catch (e) {
       el.innerHTML = '<div class="alert error">Failed to load.</div>';
     }
@@ -985,7 +1111,9 @@
     }
   }
 
+  let currentBatchId = '';
   async function openBatchDetail(batchId) {
+    currentBatchId = batchId;
     showScreen('batch-detail');
     const el = document.getElementById('batch-detail-content');
     el.innerHTML = '<div class="spinner">Loading...</div>';
@@ -993,17 +1121,91 @@
       const res = await fetch(`${API}/api/batches/${batchId}/trace`);
       const data = await res.json();
       document.getElementById('batch-detail-title').textContent = `Batch ${data.batch_code}`;
+
+      // Agent trust badge on batch (visible to buyers in future)
+      let trustHtml = '';
+      if (data.agent_trust) {
+        const t = data.agent_trust;
+        const tierColors = { 'GOLD': '#d4a017', 'SILVER': '#8a8a8a', 'BRONZE': '#cd7f32', 'SUSPENDED': '#c62828' };
+        const tierIcons = { 'GOLD': '🥇', 'SILVER': '🥈', 'BRONZE': '🥉', 'SUSPENDED': '⚠️' };
+        trustHtml = `<div style="text-align:center;margin-top:8px;font-size:14px;">
+          <span style="color:${tierColors[t.tier] || '#999'};">${tierIcons[t.tier] || ''} ${t.tier}</span>
+          · ${t.completed_batches} batches completed
+          ${t.suspended ? '<br><span style="color:#c62828;font-size:12px;">⚠ Dispute pending — tier frozen</span>' : ''}
+        </div>`;
+      }
+
+      // Warehouse section
+      let warehouseHtml = '';
+      if (data.warehouse) {
+        const w = data.warehouse;
+        const sc = w.storage_cost;
+        const feeWarning = sc && sc.total_fee > 0
+          ? `<div style="background:#fff3e0;border:1px solid #ffcc02;border-radius:8px;padding:10px;margin-top:10px;font-size:13px;color:#e65100;">
+              ⚠ Storage: ${sc.days} day${sc.days > 1 ? 's' : ''} × ${Number(w.daily_storage_fee).toLocaleString()} UGX = <strong>${Number(sc.total_fee).toLocaleString()} UGX accrued</strong>
+            </div>` : '';
+        warehouseHtml = `
+          <div class="card" style="border-left:4px solid #2e7d32;">
+            <h3 style="margin-bottom:8px;">🏪 Warehouse Receipt</h3>
+            <div style="font-size:14px;">
+              <div>📍 <strong>${escHtml(w.subcounty_location)}</strong></div>
+              <div>🏠 ${escHtml(w.facility_type)}${w.owner_name ? ' — ' + escHtml(w.owner_name) : ''}</div>
+              <div>📅 Lodged: ${new Date(w.date_lodged).toLocaleDateString()}</div>
+            </div>
+            ${w.photo_url ? `<img src="${escHtml(w.photo_url)}" style="width:100%;border-radius:8px;margin-top:10px;" alt="Warehouse photo">` : ''}
+            ${feeWarning}
+          </div>`;
+      } else if (data.status === 'open') {
+        warehouseHtml = `
+          <button class="btn orange" style="margin-bottom:14px;" onclick="showLodgeForm()">🏪 Lodge at Warehouse</button>`;
+      }
+
+      // Fetch escrow info for this batch
+      let escrowHtml = '';
+      try {
+        const escRows = await fetch(`${API}/api/escrow/agent`, { headers: { 'x-phone': agentPhone, 'x-pin': agentPin } });
+        const escList = await escRows.json();
+        const esc = escList.find(e => e.batch_id === batchId);
+        if (esc) {
+          const escStatusColors = {
+            'PENDING_PAYMENT': '#f57f17', 'FUNDS_LOCKED': '#2e7d32', 'IN_TRANSIT': '#1565c0',
+            'RELEASED': '#1b5e20', 'CANCELLED': '#9e9e9e', 'DISPUTED': '#c62828'
+          };
+          const escStatusLabels = {
+            'PENDING_PAYMENT': 'Awaiting Payment', 'FUNDS_LOCKED': 'Funds Locked', 'IN_TRANSIT': 'In Transit',
+            'RELEASED': 'Payout Queued', 'CANCELLED': 'Cancelled', 'DISPUTED': 'Disputed'
+          };
+          let escAction = '';
+          if (esc.status === 'FUNDS_LOCKED') {
+            escAction = `<button class="btn green" style="margin-top:8px;" onclick="openDispatchForm('${escHtml(esc.id)}')">🚚 Mark as Dispatched</button>`;
+          }
+          escrowHtml = `
+            <div class="card" style="border-left:4px solid ${escStatusColors[esc.status] || '#999'};">
+              <h3 style="margin-bottom:8px;">💳 Escrow</h3>
+              <div style="font-size:14px;">
+                <div>Status: <strong style="color:${escStatusColors[esc.status]};">${escStatusLabels[esc.status] || esc.status}</strong></div>
+                <div>Buyer: ${escHtml(esc.buyer_phone)}</div>
+                <div>Amount: UGX ${Number(esc.total_amount).toLocaleString()} (You receive: UGX ${Number(esc.agent_payout).toLocaleString()})</div>
+              </div>
+              ${escAction}
+            </div>`;
+        }
+      } catch (_) {}
+
       el.innerHTML = `
         <div class="card" style="text-align:center;">
           <div style="font-size:32px;">📦</div>
           <h2 style="margin:8px 0;">${escHtml(data.batch_code)}</h2>
           <div style="font-size:18px;font-weight:bold;color:#6a1b9a;">${escHtml(data.crop)} · ${data.total_quantity_kg}kg</div>
+          ${trustHtml}
           <div style="display:flex;justify-content:center;gap:16px;margin-top:12px;">
             <div><span style="font-size:22px;font-weight:bold;">${escHtml(data.overall_grade || '—')}</span><br><span style="font-size:11px;color:#888;">Grade</span></div>
             <div><span style="font-size:22px;font-weight:bold;">${data.avg_moisture || '—'}%</span><br><span style="font-size:11px;color:#888;">Moisture</span></div>
-            <div><span style="font-size:22px;font-weight:bold;color:${data.status === 'sold' ? '#2e7d32' : '#6a1b9a'};">${data.status.toUpperCase()}</span><br><span style="font-size:11px;color:#888;">Status</span></div>
+            <div><span style="font-size:22px;font-weight:bold;color:${data.status === 'sold' ? '#2e7d32' : data.status === 'warehoused' ? '#f57c00' : '#6a1b9a'};">${data.status.toUpperCase()}</span><br><span style="font-size:11px;color:#888;">Status</span></div>
           </div>
         </div>
+        ${escrowHtml}
+        ${warehouseHtml}
         <h3 style="margin:14px 0 8px;">🌾 Traceability — ${data.farmers.length} Farmers</h3>
         ${data.farmers.map(f => `
           <div class="card" style="padding:12px;">
@@ -1017,6 +1219,211 @@
           </div>`).join('')}`;
     } catch (e) {
       el.innerHTML = '<div class="alert error">Failed to load batch detail.</div>';
+    }
+  }
+
+  function showLodgeForm() {
+    document.getElementById('lodge-location').value = '';
+    document.getElementById('lodge-type').value = 'Rented Room';
+    document.getElementById('lodge-owner').value = '';
+    document.getElementById('lodge-fee').value = '0';
+    document.getElementById('lodge-photo').value = '';
+    document.getElementById('lodge-notes').value = '';
+    document.getElementById('lodge-error').style.display = 'none';
+    document.getElementById('lodge-success').style.display = 'none';
+    showScreen('lodge');
+  }
+
+  async function submitLodge() {
+    const errEl = document.getElementById('lodge-error');
+    const succEl = document.getElementById('lodge-success');
+    errEl.style.display = 'none'; succEl.style.display = 'none';
+
+    const location = document.getElementById('lodge-location').value.trim();
+    const photo = document.getElementById('lodge-photo').files[0];
+    if (!location) { showAlert(errEl, 'error', 'Enter the sub-county / location.'); return; }
+    if (!photo) { showAlert(errEl, 'error', 'Photo is required. Snap a photo of the stacked bags.'); return; }
+
+    const form = new FormData();
+    form.append('photo', photo);
+    form.append('subcounty_location', location);
+    form.append('facility_type', document.getElementById('lodge-type').value);
+    form.append('owner_name', document.getElementById('lodge-owner').value.trim());
+    form.append('daily_storage_fee', document.getElementById('lodge-fee').value || '0');
+    form.append('notes', document.getElementById('lodge-notes').value.trim());
+
+    try {
+      const res = await fetch(`${API}/api/batches/${currentBatchId}/lodge`, {
+        method: 'POST',
+        headers: { 'x-phone': agentPhone, 'x-pin': agentPin },
+        body: form
+      });
+      const data = await res.json();
+      if (!res.ok) { showAlert(errEl, 'error', data.error || 'Failed to lodge batch.'); return; }
+      showAlert(succEl, 'success', `Batch lodged at ${escHtml(data.receipt.subcounty_location)}! Status: WAREHOUSED`);
+      setTimeout(() => openBatchDetail(currentBatchId), 1500);
+    } catch (e) {
+      showAlert(errEl, 'error', 'Connection error.');
+    }
+  }
+
+  // ==========================================
+  // ESCROW ORDERS (Agent view)
+  // ==========================================
+  async function showEscrowOrders() {
+    showScreen('escrow-orders');
+    const list = document.getElementById('escrow-orders-list');
+    list.innerHTML = '<div class="spinner">Loading escrow orders...</div>';
+    try {
+      const r = await fetch(`${API}/api/escrow/agent`, {
+        headers: { 'x-phone': agentPhone, 'x-pin': agentPin }
+      });
+      const orders = await r.json();
+      if (!orders.length) {
+        list.innerHTML = '<div class="empty">No escrow orders yet. When a buyer purchases your batch, it will appear here.</div>';
+        return;
+      }
+      list.innerHTML = '';
+      const statusColors = {
+        'PENDING_PAYMENT': '#f57f17', 'FUNDS_LOCKED': '#2e7d32', 'IN_TRANSIT': '#1565c0',
+        'RELEASED': '#1b5e20', 'CANCELLED': '#9e9e9e', 'DISPUTED': '#c62828'
+      };
+      const statusLabels = {
+        'PENDING_PAYMENT': 'Awaiting Payment', 'FUNDS_LOCKED': 'Funds Locked', 'IN_TRANSIT': 'In Transit',
+        'RELEASED': 'Payout Queued', 'CANCELLED': 'Cancelled', 'DISPUTED': 'Disputed'
+      };
+      orders.forEach(o => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.cursor = 'pointer';
+        card.style.borderLeft = `4px solid ${statusColors[o.status] || '#999'}`;
+        card.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-weight:bold;">${escHtml(o.crop)} — ${escHtml(o.total_quantity_kg)}kg</div>
+            <span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:bold;background:${statusColors[o.status]}22;color:${statusColors[o.status]};">
+              ${statusLabels[o.status] || o.status}
+            </span>
+          </div>
+          <div style="font-size:13px;color:#666;margin-top:4px;">
+            Batch ${escHtml(o.batch_code)} · Buyer: ${escHtml(o.buyer_phone)}
+          </div>
+          <div style="font-size:16px;font-weight:bold;color:#1565c0;margin-top:4px;">
+            UGX ${Number(o.agent_payout).toLocaleString()} <span style="font-size:11px;color:#888;">(your payout)</span>
+          </div>
+        `;
+        card.onclick = () => openEscrowAgentDetail(o.id);
+        list.appendChild(card);
+      });
+    } catch (e) {
+      list.innerHTML = '<div class="alert error">Failed to load escrow orders.</div>';
+    }
+  }
+
+  async function openEscrowAgentDetail(escrowId) {
+    showScreen('escrow-detail');
+    const el = document.getElementById('escrow-detail-content');
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    try {
+      const r = await fetch(`${API}/api/escrow/${escrowId}`);
+      if (!r.ok) throw new Error('Not found');
+      const e = await r.json();
+      document.getElementById('escrow-detail-title').textContent = 'Escrow #' + e.id.slice(0,8);
+
+      let actionHtml = '';
+      if (e.status === 'FUNDS_LOCKED') {
+        actionHtml = `
+          <div class="card" style="border-left:4px solid #1565c0;">
+            <h3>Ready to Dispatch</h3>
+            <p style="font-size:13px;color:#666;margin:8px 0;">Funds are locked. Enter driver details to dispatch.</p>
+            <div id="dispatch-form-${escHtml(e.id)}">
+              <input type="tel" id="dispatch-driver-${escHtml(e.id)}" placeholder="Driver phone (e.g. 0771234567)" style="width:100%;padding:8px;margin:4px 0;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+              <input type="text" id="dispatch-plate-${escHtml(e.id)}" placeholder="Truck plate (e.g. UAB 123X)" style="width:100%;padding:8px;margin:4px 0;border:1px solid #ddd;border-radius:6px;font-size:14px;text-transform:uppercase;">
+              <button class="btn green" style="width:100%;margin-top:6px;" onclick="dispatchEscrow('${escHtml(e.id)}')">🚚 Dispatch Now</button>
+            </div>
+          </div>`;
+      } else if (e.status === 'IN_TRANSIT') {
+        actionHtml = `
+          <div class="card" style="border-left:4px solid #ff9800;">
+            <h3>In Transit</h3>
+            <p style="font-size:13px;color:#666;">Dispatched on ${new Date(e.dispatched_at).toLocaleDateString()}. Waiting for buyer to confirm delivery and release funds.</p>
+            ${e.driver_phone ? `<div style="font-size:13px;margin-top:6px;"><strong>Driver:</strong> ${escHtml(e.driver_phone)} | <strong>Truck:</strong> ${escHtml(e.truck_plate_number)}</div>` : ''}
+          </div>`;
+      } else if (e.status === 'RELEASED') {
+        actionHtml = `
+          <div class="card" style="border-left:4px solid #2e7d32;">
+            <h3>💰 FUNDS CLEARED — PAYOUT QUEUED</h3>
+            <p style="font-size:14px;font-weight:bold;color:#2e7d32;margin:4px 0;">UGX ${Number(e.agent_payout).toLocaleString()}</p>
+            <p style="font-size:12px;color:#888;margin-top:4px;">Payouts are processed daily at 5:00 PM EAT.</p>
+          </div>`;
+      } else if (e.status === 'DISPUTED') {
+        actionHtml = `
+          <div class="card" style="border-left:4px solid #c62828;">
+            <h3>⚠ Dispute Active</h3>
+            <p style="font-size:13px;color:#666;">${escHtml(e.notes || 'Buyer has raised a dispute.')} Contact admin to resolve.</p>
+          </div>`;
+      } else if (e.status === 'CANCELLED') {
+        actionHtml = `
+          <div class="card" style="border-left:4px solid #9e9e9e;">
+            <h3>Cancelled</h3>
+            <p style="font-size:13px;color:#666;">This order was cancelled on ${new Date(e.cancelled_at).toLocaleDateString()}.</p>
+          </div>`;
+      }
+
+      el.innerHTML = `
+        <div class="card">
+          <div style="text-align:center;margin-bottom:8px;">
+            <div style="font-size:28px;">💳</div>
+            <div style="font-size:16px;font-weight:bold;margin:6px 0;">${e.status.replace(/_/g,' ')}</div>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;">
+            <span>Total Amount</span><strong>UGX ${Number(e.total_amount).toLocaleString()}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;">
+            <span>Platform Fee (5%)</span><span>UGX ${Number(e.platform_fee).toLocaleString()}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0;font-weight:bold;border-top:2px solid #ddd;margin-top:4px;padding-top:8px;">
+            <span>Your Payout</span><span style="color:#2e7d32;">UGX ${Number(e.agent_payout).toLocaleString()}</span>
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:8px;">Timeline</h3>
+          <div style="font-size:13px;color:#666;">
+            <div>📝 Created: ${new Date(e.created_at).toLocaleString()}</div>
+            ${e.locked_at ? `<div>🔒 Funds Locked: ${new Date(e.locked_at).toLocaleString()}</div>` : ''}
+            ${e.dispatched_at ? `<div>🚚 Dispatched: ${new Date(e.dispatched_at).toLocaleString()}</div>` : ''}
+            ${e.released_at ? `<div>💰 Released: ${new Date(e.released_at).toLocaleString()}</div>` : ''}
+            ${e.cancelled_at ? `<div>❌ Cancelled: ${new Date(e.cancelled_at).toLocaleString()}</div>` : ''}
+          </div>
+        </div>
+        ${actionHtml}
+      `;
+    } catch (err) {
+      el.innerHTML = '<div class="alert error">Failed to load escrow detail.</div>';
+    }
+  }
+
+  function openDispatchForm(escrowId) {
+    const el = document.getElementById('dispatch-form-' + escrowId);
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  async function dispatchEscrow(escrowId) {
+    const driverPhone = document.getElementById('dispatch-driver-' + escrowId)?.value?.trim();
+    const truckPlate = document.getElementById('dispatch-plate-' + escrowId)?.value?.trim();
+    if (!driverPhone) return alert('Please enter the driver\'s phone number.');
+    if (!truckPlate) return alert('Please enter the truck plate number.');
+    if (!confirm(`Dispatch with driver ${driverPhone}, truck ${truckPlate}? The buyer will be notified.`)) return;
+    try {
+      const r = await fetch(`${API}/api/escrow/${escrowId}/dispatch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-phone': agentPhone, 'x-pin': agentPin },
+        body: JSON.stringify({ driver_phone: driverPhone, truck_plate_number: truckPlate })
+      });
+      const data = await r.json();
+      if (!r.ok) return alert(data.error || 'Dispatch failed');
+      openEscrowAgentDetail(escrowId);
+    } catch (e) {
+      alert('Network error');
     }
   }
 

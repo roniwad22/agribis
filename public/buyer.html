@@ -3,18 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Market Listings — Agri-Bridge</title>
-  <meta name="theme-color" content="#2e7d32">
+  <title>Buyer Portal — Agri-Bridge</title>
+  <meta name="theme-color" content="#1565c0">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; background: #f0f4f0; color: #222; min-height: 100vh; }
+    body { font-family: Arial, sans-serif; background: #f0f4f8; color: #222; min-height: 100vh; }
 
     header {
-      background: #2e7d32; color: white;
+      background: #1565c0; color: white;
       padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;
     }
-    header h1 { font-size: 20px; }
-    header a { color: rgba(255,255,255,0.8); font-size: 13px; text-decoration: none; }
+    header h1 { font-size: 18px; }
+    header .user-info { font-size: 13px; opacity: 0.9; }
+    header button {
+      background: rgba(255,255,255,0.2); border: none; color: white;
+      padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+    }
 
     .tabs {
       display: flex; background: white; border-bottom: 2px solid #e0e0e0;
@@ -22,180 +26,786 @@
     }
     .tab-btn {
       flex: 1; padding: 14px 8px; border: none; background: none;
-      font-size: 15px; font-weight: bold; color: #888; cursor: pointer;
+      font-size: 14px; font-weight: bold; color: #888; cursor: pointer;
       border-bottom: 3px solid transparent; margin-bottom: -2px;
-      transition: color 0.15s, border-color 0.15s;
     }
-    .tab-btn.active { color: #2e7d32; border-bottom-color: #2e7d32; }
+    .tab-btn.active { color: #1565c0; border-bottom-color: #1565c0; }
 
-    .search-bar {
-      padding: 12px 16px; background: white; border-bottom: 1px solid #e0e0e0;
-    }
-    .search-bar input {
-      width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px;
-      font-size: 15px; outline: none;
-    }
-    .search-bar input:focus { border-color: #2e7d32; }
+    .container { padding: 16px; max-width: 600px; margin: 0 auto; }
 
-    #listings-container { padding: 16px; }
-
-    .listing-card {
+    .card {
       background: white; border-radius: 10px; padding: 16px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.07); margin-bottom: 14px;
-      border-left: 4px solid #2e7d32;
     }
-    .listing-card .detail { font-size: 17px; font-weight: bold; margin-bottom: 4px; }
-    .listing-card .meta { font-size: 13px; color: #777; margin-bottom: 8px; }
+    .card-title { font-size: 17px; font-weight: bold; margin-bottom: 6px; }
+    .card-meta { font-size: 13px; color: #777; margin-bottom: 8px; }
 
     .badge {
       display: inline-block; padding: 3px 10px; border-radius: 12px;
-      font-size: 12px; font-weight: bold; margin-right: 6px; margin-top: 4px;
+      font-size: 11px; font-weight: bold; margin-right: 4px;
     }
-    .badge-verified { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
-    .badge-trusted  { background: #e8f5e9; color: #2e7d32; }
-    .badge-active   { background: #e3f2fd; color: #1565c0; }
-    .badge-new      { background: #fff3e0; color: #e65100; }
+    .badge-gold { background: #fff8e1; color: #f57f17; border: 1px solid #ffe082; }
+    .badge-silver { background: #f3e5f5; color: #7b1fa2; border: 1px solid #ce93d8; }
+    .badge-bronze { background: #fbe9e7; color: #bf360c; border: 1px solid #ffab91; }
+    .badge-new { background: #eceff1; color: #546e7a; }
+    .badge-warehoused { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
 
-    .trust-row { margin-top: 6px; font-size: 13px; }
+    .status-badge {
+      display: inline-block; padding: 4px 10px; border-radius: 12px;
+      font-size: 11px; font-weight: bold;
+    }
+    .status-PENDING_PAYMENT { background: #fff9c4; color: #f57f17; }
+    .status-FUNDS_LOCKED { background: #e8f5e9; color: #2e7d32; }
+    .status-IN_TRANSIT { background: #e3f2fd; color: #1565c0; }
+    .status-RELEASED { background: #e8f5e9; color: #1b5e20; }
+    .status-CANCELLED { background: #eceff1; color: #546e7a; }
+    .status-DISPUTED { background: #ffebee; color: #c62828; }
 
-    video {
-      width: 100%; margin-top: 10px; border-radius: 6px;
-      max-height: 220px; object-fit: cover;
+    .btn {
+      display: inline-block; padding: 10px 20px; border-radius: 8px; border: none;
+      font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 8px; margin-right: 6px;
+    }
+    .btn-primary { background: #1565c0; color: white; }
+    .btn-success { background: #2e7d32; color: white; }
+    .btn-danger { background: #c62828; color: white; }
+    .btn-outline { background: white; color: #1565c0; border: 2px solid #1565c0; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    input, select {
+      width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 15px; outline: none; margin-bottom: 10px;
+    }
+    input:focus, select:focus { border-color: #1565c0; }
+    label { display: block; font-size: 13px; font-weight: bold; color: #555; margin-bottom: 4px; }
+
+    .form-group { margin-bottom: 14px; }
+
+    .spinner { text-align: center; padding: 40px; color: #888; }
+    .empty { text-align: center; padding: 40px; color: #999; font-size: 15px; }
+    .error-msg {
+      padding: 10px 14px; background: #ffebee; color: #c62828;
+      border: 1px solid #ef9a9a; border-radius: 8px; font-size: 13px; margin-bottom: 12px;
+    }
+    .success-msg {
+      padding: 10px 14px; background: #e8f5e9; color: #2e7d32;
+      border: 1px solid #a5d6a7; border-radius: 8px; font-size: 13px; margin-bottom: 12px;
     }
 
-    .spinner { text-align: center; padding: 40px; color: #888; font-size: 15px; }
-    .empty   { text-align: center; padding: 40px; color: #999; font-size: 15px; }
-    .error   {
-      margin: 16px; padding: 14px 16px; background: #ffebee; color: #c62828;
-      border: 1px solid #ef9a9a; border-radius: 8px; font-size: 14px;
+    .batch-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 0; border-bottom: 1px solid #f0f0f0;
+    }
+    .batch-row:last-child { border-bottom: none; }
+
+    .price-tag {
+      font-size: 18px; font-weight: bold; color: #1565c0; margin: 8px 0;
     }
 
-    .refresh-row {
-      text-align: center; padding: 10px 0 4px;
-      font-size: 13px; color: #888;
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); z-index: 100;
+      display: flex; align-items: center; justify-content: center;
     }
-    .refresh-row button {
-      background: none; border: none; color: #2e7d32;
-      font-size: 13px; cursor: pointer; text-decoration: underline;
+    .modal {
+      background: white; border-radius: 12px; padding: 24px; margin: 16px;
+      max-width: 400px; width: 100%;
     }
+    .modal h3 { margin-bottom: 12px; }
+
+    .hidden { display: none !important; }
+
+    .amount-row {
+      display: flex; justify-content: space-between; padding: 6px 0;
+      font-size: 14px; border-bottom: 1px solid #f5f5f5;
+    }
+    .amount-row.total { font-weight: bold; font-size: 16px; border-top: 2px solid #ddd; border-bottom: none; margin-top: 4px; padding-top: 8px; }
   </style>
 </head>
 <body>
 
-<header>
-  <h1>🌾 Market Listings</h1>
-  <a href="/app/">Full App</a>
-</header>
-
-<div class="tabs">
-  <button class="tab-btn active" id="tab-village" onclick="switchTab('VILLAGE')">🏘 Village (Farm Gate)</button>
-  <button class="tab-btn" id="tab-city" onclick="switchTab('CITY')">🏙 City (Wholesale)</button>
+<!-- ============ AUTH SCREEN ============ -->
+<div id="auth-screen">
+  <header>
+    <h1>Agri-Bridge Buyer Portal</h1>
+  </header>
+  <div class="container" style="padding-top:30px;">
+    <div class="card">
+      <div class="card-title" id="auth-title">Login</div>
+      <div id="auth-error"></div>
+      <div id="auth-form">
+        <div class="form-group">
+          <label>Phone Number</label>
+          <input type="tel" id="auth-phone" placeholder="+256700000000">
+        </div>
+        <div class="form-group hidden" id="auth-name-group">
+          <label>Full Name</label>
+          <input type="text" id="auth-name" placeholder="Your name">
+        </div>
+        <div class="form-group">
+          <label>4-Digit PIN</label>
+          <input type="password" id="auth-pin" maxlength="4" inputmode="numeric" placeholder="****">
+        </div>
+        <button class="btn btn-primary" style="width:100%;" onclick="doAuth()" id="auth-submit-btn">Login</button>
+        <p style="text-align:center;margin-top:12px;font-size:13px;color:#777;">
+          <span id="auth-toggle-text">No account?</span>
+          <a href="#" onclick="toggleAuthMode()" style="color:#1565c0;" id="auth-toggle-link">Register</a>
+        </p>
+      </div>
+      <!-- OTP step -->
+      <div id="otp-form" class="hidden">
+        <div class="form-group">
+          <label>Enter OTP Code</label>
+          <input type="text" id="otp-code" maxlength="6" inputmode="numeric" placeholder="6-digit code">
+        </div>
+        <button class="btn btn-primary" style="width:100%;" onclick="verifyOtp()">Verify</button>
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="search-bar">
-  <input type="search" id="crop-search" placeholder="Search crop…" oninput="filterCards(this.value)">
+<!-- ============ MAIN APP ============ -->
+<div id="app-screen" class="hidden">
+  <header>
+    <div>
+      <h1>Agri-Bridge</h1>
+      <div class="user-info" id="user-display"></div>
+    </div>
+    <button onclick="logout()">Logout</button>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-market" onclick="switchTab('market')">Marketplace</button>
+    <button class="tab-btn" id="tab-orders" onclick="switchTab('orders')">My Orders</button>
+  </div>
+
+  <!-- MARKETPLACE TAB -->
+  <div id="market-view" class="container">
+    <div style="margin-bottom:12px;">
+      <input type="search" id="market-search" placeholder="Search crop..." oninput="filterMarket(this.value)">
+    </div>
+    <div id="market-list">
+      <div class="spinner">Loading marketplace...</div>
+    </div>
+  </div>
+
+  <!-- ORDERS TAB -->
+  <div id="orders-view" class="container hidden">
+    <div id="orders-list">
+      <div class="spinner">Loading orders...</div>
+    </div>
+  </div>
+
+  <!-- BATCH DETAIL VIEW -->
+  <div id="batch-detail-view" class="container hidden">
+    <button class="btn btn-outline" onclick="backToMarket()" style="margin-bottom:12px;">Back</button>
+    <div id="batch-detail-content"></div>
+  </div>
+
+  <!-- ESCROW DETAIL VIEW -->
+  <div id="escrow-detail-view" class="container hidden">
+    <button class="btn btn-outline" onclick="backToOrders()" style="margin-bottom:12px;">Back</button>
+    <div id="escrow-detail-content"></div>
+  </div>
 </div>
 
-<div id="listings-container">
-  <div class="spinner">Loading listings…</div>
+<!-- RELEASE CONFIRMATION MODAL -->
+<div id="release-modal" class="modal-overlay hidden" onclick="closeReleaseModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>Confirm Delivery &amp; Release Funds</h3>
+    <p style="margin-bottom:12px;font-size:14px;color:#555;">
+      By releasing funds, you confirm that you have received the produce and are satisfied with the quality.
+      <strong>This action cannot be undone.</strong>
+    </p>
+    <div id="release-summary" style="margin-bottom:12px;"></div>
+    <div class="form-group">
+      <label>Type "RELEASE" to confirm</label>
+      <input type="text" id="release-confirm-input" placeholder="Type RELEASE">
+    </div>
+    <button class="btn btn-success" id="release-confirm-btn" onclick="confirmRelease()" disabled>Release Funds</button>
+    <button class="btn btn-outline" onclick="closeReleaseModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- DISPUTE MODAL -->
+<div id="dispute-modal" class="modal-overlay hidden" onclick="closeDisputeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>File a Dispute</h3>
+    <p style="margin-bottom:12px;font-size:14px;color:#555;">
+      Describe the issue. An admin will review and resolve the dispute.
+    </p>
+    <div class="form-group">
+      <label>Reason</label>
+      <input type="text" id="dispute-reason" placeholder="e.g. Wrong quantity, damaged goods...">
+    </div>
+    <button class="btn btn-danger" onclick="submitDispute()">Submit Dispute</button>
+    <button class="btn btn-outline" onclick="closeDisputeModal()">Cancel</button>
+  </div>
 </div>
 
 <script>
   const API = '';
-  let currentTab = 'VILLAGE';
-  let allCards = [];
+  let buyer = null; // { phone, name }
+  let authMode = 'login'; // login or register
+  let marketBatches = [];
+  let currentEscrowId = null;
 
   function escHtml(s) {
     if (s == null) return '';
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  function switchTab(type) {
-    currentTab = type;
-    document.getElementById('tab-village').classList.toggle('active', type === 'VILLAGE');
-    document.getElementById('tab-city').classList.toggle('active', type === 'CITY');
-    document.getElementById('crop-search').value = '';
-    loadListings();
+  function formatUGX(n) {
+    return 'UGX ' + Number(n).toLocaleString();
   }
 
-  function filterCards(q) {
-    const term = q.trim().toLowerCase();
-    allCards.forEach(({ el, detail }) => {
-      el.style.display = (!term || detail.toLowerCase().includes(term)) ? '' : 'none';
-    });
+  function formatDate(iso) {
+    if (!iso) return '-';
+    return new Date(iso).toLocaleDateString('en-UG', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
   }
 
-  async function loadListings() {
-    const container = document.getElementById('listings-container');
-    container.innerHTML = '<div class="spinner">Loading listings…</div>';
-    allCards = [];
+  function tierBadge(tier) {
+    if (tier === 'GOLD') return '<span class="badge badge-gold">GOLD Agent</span>';
+    if (tier === 'SILVER') return '<span class="badge badge-silver">SILVER Agent</span>';
+    if (tier === 'BRONZE') return '<span class="badge badge-bronze">BRONZE Agent</span>';
+    return '<span class="badge badge-new">NEW Agent</span>';
+  }
 
-    try {
-      const res = await fetch(`${API}/api/listings/active?type=${currentTab}`);
-      if (!res.ok) throw new Error('Server error');
-      const listings = await res.json();
+  function statusLabel(s) {
+    const map = {
+      'PENDING_PAYMENT': 'Awaiting Payment',
+      'FUNDS_LOCKED': 'Funds Locked',
+      'IN_TRANSIT': 'In Transit',
+      'RELEASED': 'Completed',
+      'CANCELLED': 'Cancelled',
+      'DISPUTED': 'Disputed'
+    };
+    return `<span class="status-badge status-${escHtml(s)}">${map[s] || s}</span>`;
+  }
 
-      if (!listings.length) {
-        container.innerHTML = '<div class="empty">No active listings right now.</div>';
-        return;
+  const CROP_EMOJI = { Maize:'🌽', Beans:'🫘', Rice:'🍚', Coffee:'☕', Matooke:'🍌', Cassava:'🫓', 'G-Nuts':'🥜', Millet:'🌾', Sorghum:'🌾', 'Sweet Potatoes':'🍠', 'Irish Potatoes':'🥔', 'Soya Beans':'🫘', 'Sesame (Simsim)':'🌱', Tomatoes:'🍅', Onions:'🧅', Cabbage:'🥬', Pineapple:'🍍', Sugarcane:'🎋' };
+  function cropIcon(crop) { return CROP_EMOJI[crop] || '🌾'; }
+
+  // ==========================================
+  // AUTH
+  // ==========================================
+  function toggleAuthMode() {
+    authMode = authMode === 'login' ? 'register' : 'login';
+    document.getElementById('auth-title').textContent = authMode === 'login' ? 'Login' : 'Register';
+    document.getElementById('auth-name-group').classList.toggle('hidden', authMode === 'login');
+    document.getElementById('auth-toggle-text').textContent = authMode === 'login' ? 'No account?' : 'Already registered?';
+    document.getElementById('auth-toggle-link').textContent = authMode === 'login' ? 'Register' : 'Login';
+    document.getElementById('auth-submit-btn').textContent = authMode === 'login' ? 'Login' : 'Register';
+    document.getElementById('auth-error').innerHTML = '';
+  }
+
+  async function doAuth() {
+    const phone = document.getElementById('auth-phone').value.trim();
+    const pin = document.getElementById('auth-pin').value.trim();
+    const name = document.getElementById('auth-name').value.trim();
+    document.getElementById('auth-error').innerHTML = '';
+
+    if (!phone || !pin) return showAuthError('Phone and PIN required');
+    if (!/^\d{4}$/.test(pin)) return showAuthError('PIN must be 4 digits');
+
+    if (authMode === 'login') {
+      try {
+        const r = await fetch(`${API}/api/buyers/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, pin })
+        });
+        const data = await r.json();
+        if (!r.ok) return showAuthError(data.error || 'Login failed');
+        buyer = data.buyer;
+        sessionStorage.setItem('buyer', JSON.stringify({ phone, pin, name: buyer.name }));
+        showApp();
+      } catch (e) {
+        showAuthError('Network error');
       }
-
-      // Fetch verification + reputation in parallel for all listings
-      const extras = await Promise.all(listings.map(async l => {
-        const [vr, rr] = await Promise.all([
-          fetch(`${API}/api/listings/${l.id}/verification`).then(r => r.json()).catch(() => ({ verified: false })),
-          fetch(`${API}/api/reputation/${encodeURIComponent(l.phone)}`).then(r => r.json()).catch(() => ({ tier: 'NEW', sales: 0, avg: 0, label: '[NEW SELLER]' }))
-        ]);
-        return { v: vr, rep: rr };
-      }));
-
-      container.innerHTML = '';
-      allCards = listings.map((l, i) => {
-        const { v, rep } = extras[i];
-
-        const tierClass = rep.tier === 'TRUSTED' ? 'badge-trusted' : rep.tier === 'ACTIVE' ? 'badge-active' : 'badge-new';
-        const trustBadge = `<span class="badge ${tierClass}">${escHtml(rep.label)}</span>`;
-        const reviewText = rep.sales > 0 ? `${rep.avg}/5 from ${rep.sales} buyer(s)` : 'No reviews yet';
-
-        const verifiedBadge = v && v.verified
-          ? `<span class="badge badge-verified">✅ Agent Verified · Grade ${escHtml(v.grade)}${v.geo ? ' · 📍 GPS' : ''}</span>`
-          : '';
-
-        const videoEl = l.video
-          ? `<video src="/uploads/${escHtml(l.video)}" controls preload="none"></video>`
-          : '';
-
-        const card = document.createElement('div');
-        card.className = 'listing-card';
-        card.innerHTML = `
-          <div class="detail">${escHtml(l.detail)}</div>
-          <div class="meta">📍 ${escHtml(l.location)} &nbsp;·&nbsp; 🕒 ${escHtml(l.time)}</div>
-          <div class="trust-row">${trustBadge} ${verifiedBadge}</div>
-          <div style="font-size:12px;color:#999;margin-top:4px;">${escHtml(reviewText)}</div>
-          ${videoEl}
-        `;
-        container.appendChild(card);
-
-        return { el: card, detail: l.detail };
-      });
-
-      // Append refresh hint
-      const row = document.createElement('div');
-      row.className = 'refresh-row';
-      row.innerHTML = `${listings.length} listing(s) shown · <button onclick="loadListings()">Refresh</button>`;
-      container.appendChild(row);
-
-    } catch (e) {
-      container.innerHTML = '<div class="error">Could not load listings. Is the server running?</div>';
+    } else {
+      if (!name) return showAuthError('Name required for registration');
+      try {
+        const r = await fetch(`${API}/api/buyers/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, name, pin })
+        });
+        const data = await r.json();
+        if (!r.ok) return showAuthError(data.error || 'Registration failed');
+        // If sandbox, auto-verify with returned code
+        if (data.code) {
+          const vr = await fetch(`${API}/api/buyers/verify-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone, code: data.code })
+          });
+          const vd = await vr.json();
+          if (!vr.ok) return showAuthError(vd.error || 'OTP verification failed');
+          buyer = { phone, name };
+          sessionStorage.setItem('buyer', JSON.stringify({ phone, pin, name }));
+          showApp();
+        } else {
+          // Show OTP form
+          document.getElementById('auth-form').classList.add('hidden');
+          document.getElementById('otp-form').classList.remove('hidden');
+          window._pendingReg = { phone, pin, name };
+        }
+      } catch (e) {
+        showAuthError('Network error');
+      }
     }
   }
 
-  // Boot
-  loadListings();
+  async function verifyOtp() {
+    const code = document.getElementById('otp-code').value.trim();
+    const { phone, pin, name } = window._pendingReg;
+    document.getElementById('auth-error').innerHTML = '';
+    try {
+      const r = await fetch(`${API}/api/buyers/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, code })
+      });
+      const data = await r.json();
+      if (!r.ok) return showAuthError(data.error || 'Verification failed');
+      buyer = { phone, name };
+      sessionStorage.setItem('buyer', JSON.stringify({ phone, pin, name }));
+      showApp();
+    } catch (e) {
+      showAuthError('Network error');
+    }
+  }
+
+  function showAuthError(msg) {
+    document.getElementById('auth-error').innerHTML = `<div class="error-msg">${escHtml(msg)}</div>`;
+  }
+
+  function logout() {
+    sessionStorage.removeItem('buyer');
+    buyer = null;
+    document.getElementById('app-screen').classList.add('hidden');
+    document.getElementById('auth-screen').classList.remove('hidden');
+    document.getElementById('auth-form').classList.remove('hidden');
+    document.getElementById('otp-form').classList.add('hidden');
+  }
+
+  function creds() {
+    const s = JSON.parse(sessionStorage.getItem('buyer') || '{}');
+    return { phone: s.phone, pin: s.pin };
+  }
+
+  // ==========================================
+  // APP SHELL
+  // ==========================================
+  function showApp() {
+    document.getElementById('auth-screen').classList.add('hidden');
+    document.getElementById('app-screen').classList.remove('hidden');
+    document.getElementById('user-display').textContent = buyer.name + ' (' + buyer.phone + ')';
+    switchTab('market');
+  }
+
+  function switchTab(tab) {
+    document.getElementById('tab-market').classList.toggle('active', tab === 'market');
+    document.getElementById('tab-orders').classList.toggle('active', tab === 'orders');
+    document.getElementById('market-view').classList.toggle('hidden', tab !== 'market');
+    document.getElementById('orders-view').classList.toggle('hidden', tab !== 'orders');
+    document.getElementById('batch-detail-view').classList.add('hidden');
+    document.getElementById('escrow-detail-view').classList.add('hidden');
+    if (tab === 'market') loadMarketplace();
+    if (tab === 'orders') loadOrders();
+  }
+
+  // ==========================================
+  // MARKETPLACE
+  // ==========================================
+  async function loadMarketplace() {
+    const list = document.getElementById('market-list');
+    list.innerHTML = '<div class="spinner">Loading marketplace...</div>';
+    try {
+      const r = await fetch(`${API}/api/marketplace`);
+      marketBatches = await r.json();
+      if (!marketBatches.length) {
+        list.innerHTML = '<div class="empty">No batches available right now. Check back later.</div>';
+        return;
+      }
+      renderMarket(marketBatches);
+    } catch (e) {
+      list.innerHTML = '<div class="error-msg">Could not load marketplace.</div>';
+    }
+  }
+
+  function renderMarket(batches) {
+    const list = document.getElementById('market-list');
+    list.innerHTML = '';
+    batches.forEach(b => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.cursor = 'pointer';
+      card.setAttribute('data-crop', (b.crop || '').toLowerCase());
+      const warehouseBadge = b.status === 'warehoused' ? '<span class="badge badge-warehoused">Warehoused</span>' : '';
+      const priceText = b.sale_price ? formatUGX(b.sale_price) : 'Price on inquiry';
+      card.innerHTML = `
+        <div class="card-title">${cropIcon(b.crop)} ${escHtml(b.crop)} — ${escHtml(b.total_quantity_kg)} kg</div>
+        <div class="card-meta">
+          ${escHtml(b.agent_district || 'Uganda')} · ${escHtml(b.purchase_count)} farmer(s) · Grade: ${escHtml(b.overall_grade || 'Mixed')}
+        </div>
+        <div style="margin:6px 0;">${warehouseBadge}</div>
+        <div class="price-tag">${priceText}</div>
+        <div style="font-size:12px;color:#999;">Batch ${escHtml(b.batch_code)}</div>
+      `;
+      card.onclick = () => openBatchDetail(b.id);
+      list.appendChild(card);
+    });
+    const row = document.createElement('div');
+    row.style.cssText = 'text-align:center;padding:10px 0;font-size:13px;color:#888;';
+    row.innerHTML = `${batches.length} batch(es) · <a href="#" onclick="loadMarketplace();return false;" style="color:#1565c0;">Refresh</a>`;
+    list.appendChild(row);
+  }
+
+  function filterMarket(q) {
+    const term = q.trim().toLowerCase();
+    const cards = document.getElementById('market-list').querySelectorAll('.card');
+    cards.forEach(c => {
+      const crop = c.getAttribute('data-crop') || '';
+      c.style.display = (!term || crop.includes(term)) ? '' : 'none';
+    });
+  }
+
+  async function openBatchDetail(batchId) {
+    document.getElementById('market-view').classList.add('hidden');
+    document.getElementById('batch-detail-view').classList.remove('hidden');
+    const content = document.getElementById('batch-detail-content');
+    content.innerHTML = '<div class="spinner">Loading...</div>';
+
+    try {
+      const r = await fetch(`${API}/api/marketplace/${batchId}`);
+      if (!r.ok) throw new Error('Not found');
+      const b = await r.json();
+
+      const warehouseHtml = b.warehouse ? `
+        <div class="card" style="border-left:4px solid #ff9800;">
+          <div class="card-title">Warehouse Receipt</div>
+          <div class="card-meta">${escHtml(b.warehouse.subcounty_location)} · ${escHtml(b.warehouse.facility_type)}</div>
+          ${b.warehouse.photo_url ? `<img src="${escHtml(b.warehouse.photo_url)}" style="width:100%;border-radius:8px;margin-top:8px;max-height:200px;object-fit:cover;">` : ''}
+        </div>
+      ` : '';
+
+      const priceDefault = b.sale_price || Math.round(b.total_quantity_kg * 3000);
+
+      content.innerHTML = `
+        <div class="card">
+          <div class="card-title">${cropIcon(b.crop)} ${escHtml(b.crop)}</div>
+          <div class="card-meta">Batch ${escHtml(b.batch_code)}</div>
+          <div class="batch-row"><span>Total Quantity</span><strong>${escHtml(b.total_quantity_kg)} kg</strong></div>
+          <div class="batch-row"><span>Farmer Sources</span><strong>${escHtml(b.purchase_count)}</strong></div>
+          <div class="batch-row"><span>Grade</span><strong>${escHtml(b.overall_grade || 'Mixed')}</strong></div>
+          <div class="batch-row"><span>District</span><strong>${escHtml(b.agent_district)}</strong></div>
+          <div class="batch-row"><span>Agent Trust</span>${tierBadge(b.agent_trust_tier)}</div>
+        </div>
+        ${warehouseHtml}
+        <div class="card">
+          <div class="card-title">Make an Offer</div>
+          <div class="form-group">
+            <label>Total Amount (UGX)</label>
+            <input type="number" id="offer-amount" value="${priceDefault}" min="1000" inputmode="numeric">
+          </div>
+          <div id="offer-breakdown"></div>
+          <div id="offer-error"></div>
+          <button class="btn btn-primary" style="width:100%;" onclick="initiatePurchase('${escHtml(b.id)}')">
+            Buy Now — Lock Funds
+          </button>
+          <p style="font-size:12px;color:#888;margin-top:8px;text-align:center;">
+            5% platform fee applies. Funds held in escrow until you confirm delivery.
+          </p>
+        </div>
+      `;
+
+      // Update breakdown on amount change
+      const amountInput = document.getElementById('offer-amount');
+      function updateBreakdown() {
+        const amt = parseInt(amountInput.value) || 0;
+        const fee = Math.round(amt * 0.05);
+        document.getElementById('offer-breakdown').innerHTML = `
+          <div class="amount-row"><span>Your payment</span><span>${formatUGX(amt)}</span></div>
+          <div class="amount-row"><span>Platform fee (5%)</span><span>${formatUGX(fee)}</span></div>
+          <div class="amount-row total"><span>Agent receives</span><span>${formatUGX(amt - fee)}</span></div>
+        `;
+      }
+      amountInput.addEventListener('input', updateBreakdown);
+      updateBreakdown();
+    } catch (e) {
+      content.innerHTML = '<div class="error-msg">Could not load batch details.</div>';
+    }
+  }
+
+  function backToMarket() {
+    document.getElementById('batch-detail-view').classList.add('hidden');
+    document.getElementById('market-view').classList.remove('hidden');
+  }
+
+  async function initiatePurchase(batchId) {
+    const amount = parseInt(document.getElementById('offer-amount').value);
+    const errEl = document.getElementById('offer-error');
+    errEl.innerHTML = '';
+    if (!amount || amount < 1000) return errEl.innerHTML = '<div class="error-msg">Minimum 1,000 UGX</div>';
+
+    const { phone, pin } = creds();
+    try {
+      const r = await fetch(`${API}/api/escrow`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-phone': phone, 'x-pin': pin },
+        body: JSON.stringify({ batch_id: batchId, total_amount: amount })
+      });
+      const data = await r.json();
+      if (!r.ok) return errEl.innerHTML = `<div class="error-msg">${escHtml(data.error)}</div>`;
+
+      // Success — go to orders
+      switchTab('orders');
+    } catch (e) {
+      errEl.innerHTML = '<div class="error-msg">Network error</div>';
+    }
+  }
+
+  // ==========================================
+  // ORDERS
+  // ==========================================
+  async function loadOrders() {
+    const list = document.getElementById('orders-list');
+    list.innerHTML = '<div class="spinner">Loading orders...</div>';
+    const { phone, pin } = creds();
+    try {
+      const r = await fetch(`${API}/api/escrow/buyer`, {
+        headers: { 'x-phone': phone, 'x-pin': pin }
+      });
+      const orders = await r.json();
+      if (!orders.length) {
+        list.innerHTML = '<div class="empty">No orders yet. Browse the marketplace to get started.</div>';
+        return;
+      }
+      list.innerHTML = '';
+      orders.forEach(o => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.cursor = 'pointer';
+        card.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div class="card-title">${cropIcon(o.crop)} ${escHtml(o.crop)} — ${escHtml(o.total_quantity_kg)} kg</div>
+            ${statusLabel(o.status)}
+          </div>
+          <div class="card-meta">Batch ${escHtml(o.batch_code)} · ${formatDate(o.created_at)}</div>
+          <div class="price-tag">${formatUGX(o.total_amount)}</div>
+        `;
+        card.onclick = () => openEscrowDetail(o.id);
+        list.appendChild(card);
+      });
+    } catch (e) {
+      list.innerHTML = '<div class="error-msg">Could not load orders.</div>';
+    }
+  }
+
+  async function openEscrowDetail(escrowId) {
+    document.getElementById('orders-view').classList.add('hidden');
+    document.getElementById('escrow-detail-view').classList.remove('hidden');
+    const content = document.getElementById('escrow-detail-content');
+    content.innerHTML = '<div class="spinner">Loading...</div>';
+
+    try {
+      const r = await fetch(`${API}/api/escrow/${escrowId}`);
+      if (!r.ok) throw new Error('Not found');
+      const e = await r.json();
+      currentEscrowId = e.id;
+
+      const fee = e.platform_fee;
+      const payout = e.agent_payout;
+
+      let actions = '';
+      if (e.status === 'FUNDS_LOCKED') {
+        actions = `
+          <div class="card" style="border-left:4px solid #1565c0;">
+            <div class="card-title">Waiting for Dispatch</div>
+            <p style="font-size:14px;color:#555;">The agent will dispatch your produce. You'll be notified when it's on the way.</p>
+            <button class="btn btn-outline" onclick="openCancelModal('${escHtml(e.id)}')">Cancel Order</button>
+          </div>
+        `;
+      } else if (e.status === 'IN_TRANSIT') {
+        actions = `
+          <div class="card" style="border-left:4px solid #2e7d32;">
+            <div class="card-title">Produce In Transit</div>
+            <p style="font-size:14px;color:#555;">Dispatched on ${formatDate(e.dispatched_at)}. Confirm delivery when you receive it.</p>
+            ${e.driver_phone ? `<div style="background:#f5f5f5;padding:8px 10px;border-radius:6px;margin:8px 0;font-size:13px;">
+              <div><strong>Driver:</strong> ${escHtml(e.driver_phone)}</div>
+              <div><strong>Truck:</strong> ${escHtml(e.truck_plate_number)}</div>
+            </div>` : ''}
+            <button class="btn btn-success" onclick="openReleaseModal('${escHtml(e.id)}', ${e.total_amount})">
+              Confirm Delivery &amp; Release Funds
+            </button>
+            <button class="btn btn-danger" onclick="openDisputeModal('${escHtml(e.id)}')">
+              File Dispute
+            </button>
+          </div>
+        `;
+      } else if (e.status === 'DISPUTED') {
+        actions = `
+          <div class="card" style="border-left:4px solid #c62828;">
+            <div class="card-title">Dispute Active</div>
+            <p style="font-size:14px;color:#555;">Reason: ${escHtml(e.notes)}</p>
+            <p style="font-size:13px;color:#888;">An admin will review and resolve this dispute.</p>
+          </div>
+        `;
+      } else if (e.status === 'RELEASED') {
+        actions = `
+          <div class="card" style="border-left:4px solid #2e7d32;">
+            <div class="card-title">Transaction Complete</div>
+            <p style="font-size:14px;color:#555;">Funds released on ${formatDate(e.released_at)}.</p>
+          </div>
+        `;
+      } else if (e.status === 'CANCELLED') {
+        actions = `
+          <div class="card" style="border-left:4px solid #9e9e9e;">
+            <div class="card-title">Order Cancelled</div>
+            <p style="font-size:14px;color:#555;">Cancelled on ${formatDate(e.cancelled_at)}.</p>
+          </div>
+        `;
+      }
+
+      content.innerHTML = `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div class="card-title">Escrow Details</div>
+            ${statusLabel(e.status)}
+          </div>
+          <div class="amount-row"><span>Total Amount</span><span>${formatUGX(e.total_amount)}</span></div>
+          <div class="amount-row"><span>Platform Fee (5%)</span><span>${formatUGX(fee)}</span></div>
+          <div class="amount-row total"><span>Agent Payout</span><span>${formatUGX(payout)}</span></div>
+          <div style="margin-top:10px;font-size:12px;color:#888;">
+            ${e.momo_reference ? 'MoMo Ref: ' + escHtml(e.momo_reference) : ''}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Timeline</div>
+          <div class="batch-row"><span>Created</span><span>${formatDate(e.created_at)}</span></div>
+          ${e.locked_at ? `<div class="batch-row"><span>Funds Locked</span><span>${formatDate(e.locked_at)}</span></div>` : ''}
+          ${e.dispatched_at ? `<div class="batch-row"><span>Dispatched</span><span>${formatDate(e.dispatched_at)}</span></div>` : ''}
+          ${e.released_at ? `<div class="batch-row"><span>Released</span><span>${formatDate(e.released_at)}</span></div>` : ''}
+          ${e.cancelled_at ? `<div class="batch-row"><span>Cancelled</span><span>${formatDate(e.cancelled_at)}</span></div>` : ''}
+        </div>
+        ${actions}
+      `;
+    } catch (e) {
+      content.innerHTML = '<div class="error-msg">Could not load escrow details.</div>';
+    }
+  }
+
+  function backToOrders() {
+    document.getElementById('escrow-detail-view').classList.add('hidden');
+    document.getElementById('orders-view').classList.remove('hidden');
+  }
+
+  // ==========================================
+  // RELEASE FLOW (deliberate confirmation)
+  // ==========================================
+  function openReleaseModal(escrowId, amount) {
+    currentEscrowId = escrowId;
+    document.getElementById('release-summary').innerHTML = `
+      <div class="amount-row total"><span>Releasing</span><span>${formatUGX(amount)}</span></div>
+    `;
+    document.getElementById('release-confirm-input').value = '';
+    document.getElementById('release-confirm-btn').disabled = true;
+    document.getElementById('release-modal').classList.remove('hidden');
+
+    document.getElementById('release-confirm-input').addEventListener('input', function() {
+      document.getElementById('release-confirm-btn').disabled = this.value.trim().toUpperCase() !== 'RELEASE';
+    });
+  }
+
+  function closeReleaseModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('release-modal').classList.add('hidden');
+  }
+
+  async function confirmRelease() {
+    const input = document.getElementById('release-confirm-input').value.trim().toUpperCase();
+    if (input !== 'RELEASE') return;
+
+    const { phone, pin } = creds();
+    try {
+      const r = await fetch(`${API}/api/escrow/${currentEscrowId}/release`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-phone': phone, 'x-pin': pin },
+        body: JSON.stringify({ confirm: true })
+      });
+      const data = await r.json();
+      if (!r.ok) return alert(data.error || 'Release failed');
+      closeReleaseModal();
+      openEscrowDetail(currentEscrowId);
+    } catch (e) {
+      alert('Network error');
+    }
+  }
+
+  // ==========================================
+  // CANCEL
+  // ==========================================
+  async function openCancelModal(escrowId) {
+    if (!confirm('Cancel this order? Funds will be returned.')) return;
+    const { phone, pin } = creds();
+    try {
+      const r = await fetch(`${API}/api/escrow/${escrowId}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-phone': phone, 'x-pin': pin }
+      });
+      const data = await r.json();
+      if (!r.ok) return alert(data.error || 'Cancel failed');
+      openEscrowDetail(escrowId);
+    } catch (e) {
+      alert('Network error');
+    }
+  }
+
+  // ==========================================
+  // DISPUTE FLOW
+  // ==========================================
+  function openDisputeModal(escrowId) {
+    currentEscrowId = escrowId;
+    document.getElementById('dispute-reason').value = '';
+    document.getElementById('dispute-modal').classList.remove('hidden');
+  }
+
+  function closeDisputeModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('dispute-modal').classList.add('hidden');
+  }
+
+  async function submitDispute() {
+    const reason = document.getElementById('dispute-reason').value.trim();
+    if (!reason) return alert('Please describe the issue');
+    const { phone, pin } = creds();
+    try {
+      const r = await fetch(`${API}/api/escrow/${currentEscrowId}/dispute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-phone': phone, 'x-pin': pin },
+        body: JSON.stringify({ reason })
+      });
+      const data = await r.json();
+      if (!r.ok) return alert(data.error || 'Dispute failed');
+      closeDisputeModal();
+      openEscrowDetail(currentEscrowId);
+    } catch (e) {
+      alert('Network error');
+    }
+  }
+
+  // ==========================================
+  // BOOT
+  // ==========================================
+  (function boot() {
+    const saved = sessionStorage.getItem('buyer');
+    if (saved) {
+      const s = JSON.parse(saved);
+      buyer = { phone: s.phone, name: s.name };
+      showApp();
+    }
+  })();
 </script>
 </body>
 </html>

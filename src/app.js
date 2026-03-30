@@ -191,6 +191,43 @@ function createDb(dbPath) {
         sold_at TEXT,
         FOREIGN KEY (agent_phone) REFERENCES agents(phone)
       );
+      CREATE TABLE IF NOT EXISTS warehouse_receipts (
+        id TEXT PRIMARY KEY,
+        batch_id TEXT NOT NULL UNIQUE,
+        agent_phone TEXT NOT NULL,
+        subcounty_location TEXT NOT NULL,
+        facility_type TEXT NOT NULL DEFAULT 'Rented Room',
+        owner_name TEXT,
+        photo_url TEXT NOT NULL,
+        daily_storage_fee INTEGER NOT NULL DEFAULT 0,
+        date_lodged TEXT NOT NULL,
+        date_withdrawn TEXT,
+        notes TEXT,
+        FOREIGN KEY (batch_id) REFERENCES batches(id),
+        FOREIGN KEY (agent_phone) REFERENCES agents(phone)
+      );
+      CREATE TABLE IF NOT EXISTS escrow_transactions (
+        id TEXT PRIMARY KEY,
+        batch_id TEXT NOT NULL UNIQUE,
+        agent_phone TEXT NOT NULL,
+        buyer_phone TEXT NOT NULL,
+        total_amount INTEGER NOT NULL,
+        platform_fee INTEGER NOT NULL,
+        agent_payout INTEGER NOT NULL,
+        status TEXT DEFAULT 'PENDING_PAYMENT',
+        payout_status TEXT DEFAULT 'PENDING',
+        momo_reference TEXT,
+        created_at TEXT NOT NULL,
+        locked_at TEXT,
+        dispatched_at TEXT,
+        released_at TEXT,
+        cancelled_at TEXT,
+        notes TEXT,
+        driver_phone TEXT,
+        truck_plate_number TEXT,
+        FOREIGN KEY (batch_id) REFERENCES batches(id),
+        FOREIGN KEY (agent_phone) REFERENCES agents(phone)
+      );
     `);
     return db;
 }
@@ -551,6 +588,249 @@ function createHelpers(db) {
         getAgentNearFarmer(farmerDistrict, excludePhone) {
             return db.prepare("SELECT * FROM agents WHERE status = 'active' AND district = ? AND phone != ? ORDER BY RANDOM() LIMIT 3")
               .all(farmerDistrict || 'Uganda', excludePhone || '');
+        },
+        // --- Warehouse Receipts ---
+        lodgeBatch(receipt) {
+            db.prepare(`INSERT INTO warehouse_receipts
+                (id, batch_id, agent_phone, subcounty_location, facility_type, owner_name, photo_url, daily_storage_fee, date_lodged, notes)
+                VALUES (?,?,?,?,?,?,?,?,?,?)`)
+              .run(receipt.id, receipt.batch_id, receipt.agent_phone,
+                   receipt.subcounty_location, receipt.facility_type || 'Rented Room',
+                   receipt.owner_name || null, receipt.photo_url,
+                   receipt.daily_storage_fee || 0, receipt.date_lodged,
+                   receipt.notes || null);
+            // Update batch status to 'warehoused'
+            db.prepare("UPDATE batches SET status = 'warehoused' WHERE id = ? AND status = 'open'")
+              .run(receipt.batch_id);
+        },
+        getWarehouseReceipt(batchId) {
+            return db.prepare('SELECT * FROM warehouse_receipts WHERE batch_id = ?').get(batchId) || null;
+        },
+        getAgentWarehouseReceipts(agentPhone) {
+            return db.prepare('SELECT wr.*, b.batch_code, b.crop, b.total_quantity_kg, b.overall_grade FROM warehouse_receipts wr JOIN batches b ON wr.batch_id = b.id WHERE wr.agent_phone = ? ORDER BY wr.date_lodged DESC').all(agentPhone);
+        },
+        withdrawBatch(batchId) {
+            db.prepare("UPDATE warehouse_receipts SET date_withdrawn = ? WHERE batch_id = ?")
+              .run(new Date().toISOString(), batchId);
+        },
+        // --- Aggregator Trust Score (2C) ---
+        calculateTrustScore(agentPhone) {
+            const agent = db.prepare('SELECT * FROM agents WHERE phone = ?').get(agentPhone);
+            if (!agent) return null;
+            if (agent.status !== 'active') return { phone: agentPhone, tier: 'INACTIVE', score: 0, details: {}, suspended: false };
+
+            // Core metrics — all derived dynamically
+            const purchases = db.prepare('SELECT COUNT(*) as c FROM purchase_ledger WHERE agent_phone = ?').get(agentPhone);
+            const totalBatches = db.prepare('SELECT COUNT(*) as c FROM batches WHERE agent_phone = ?').get(agentPhone);
+            const completedBatches = db.prepare("SELECT COUNT(*) as c FROM batches WHERE agent_phone = ? AND status IN ('sold', 'dispute_resolved')").get(agentPhone);
+            const warehousedBatches = db.prepare("SELECT COUNT(*) as c FROM warehouse_receipts WHERE agent_phone = ?").get(agentPhone);
+            const activeDisputes = db.prepare("SELECT COUNT(*) as c FROM batches WHERE agent_phone = ? AND status = 'disputed'").get(agentPhone);
+            const totalDisputes = db.prepare("SELECT COUNT(*) as c FROM batches WHERE agent_phone = ? AND status IN ('disputed', 'dispute_resolved')").get(agentPhone);
+
+            const purchaseCount = purchases.c;
+            const completed = completedBatches.c;
+            const warehoused = warehousedBatches.c;
+            const activeDisputeCount = activeDisputes.c;
+            const disputeTotal = totalDisputes.c;
+            const disputeRatio = completed > 0 ? disputeTotal / completed : 0;
+            const warehouseRatio = completed > 0 ? warehoused / completed : 0;
+
+            // Determine tier
+            let tier = 'NONE';
+            let calculatedTier = 'NONE';
+
+            // Bronze: KYC complete (agent is active) + at least 1 purchase
+            if (purchaseCount >= 1) calculatedTier = 'BRONZE';
+
+            // Silver: >5 completed batches + 0 unresolved disputes
+            if (completed > 5 && activeDisputeCount === 0) calculatedTier = 'SILVER';
+
+            // Gold: >20 completed + >50% warehoused + dispute ratio <5%
+            if (completed > 20 && warehouseRatio > 0.5 && disputeRatio < 0.05) calculatedTier = 'GOLD';
+
+            // KILLSWITCH: any active dispute freezes displayed tier
+            const suspended = activeDisputeCount > 0;
+            tier = suspended ? 'SUSPENDED' : calculatedTier;
+
+            return {
+                phone: agentPhone,
+                name: agent.name,
+                tier,
+                calculated_tier: calculatedTier, // real tier, hidden during suspension
+                suspended,
+                details: {
+                    purchases: purchaseCount,
+                    total_batches: totalBatches.c,
+                    completed_batches: completed,
+                    warehoused_batches: warehoused,
+                    warehouse_ratio: Math.round(warehouseRatio * 100),
+                    active_disputes: activeDisputeCount,
+                    total_disputes: disputeTotal,
+                    dispute_ratio: Math.round(disputeRatio * 100)
+                }
+            };
+        },
+        // Dispute a batch (buyer-triggered)
+        disputeBatch(batchId, reason) {
+            const batch = db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId);
+            if (!batch) return { error: 'Batch not found' };
+            if (batch.status !== 'sold' && batch.status !== 'warehoused') {
+                return { error: 'Only sold or warehoused batches can be disputed' };
+            }
+            db.prepare("UPDATE batches SET status = 'disputed' WHERE id = ?").run(batchId);
+            // Log the dispute reason
+            db.prepare('INSERT INTO agent_strikes (id, agent_phone, listing_id, farmer_phone, reason, time) VALUES (?,?,?,?,?,?)')
+              .run(crypto.randomUUID(), batch.agent_phone, batchId, '', `Batch dispute: ${reason || 'Quality issue'}`, new Date().toISOString());
+            return { success: true };
+        },
+        // Resolve a dispute (admin action)
+        resolveDispute(batchId, resolution) {
+            const batch = db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId);
+            if (!batch) return { error: 'Batch not found' };
+            if (batch.status !== 'disputed') return { error: 'Batch is not in disputed status' };
+            db.prepare("UPDATE batches SET status = 'dispute_resolved' WHERE id = ?").run(batchId);
+            return { success: true };
+        },
+        getWarehouseStorageCost(batchId) {
+            const wr = db.prepare('SELECT * FROM warehouse_receipts WHERE batch_id = ?').get(batchId);
+            if (!wr) return null;
+            const lodged = new Date(wr.date_lodged);
+            const end = wr.date_withdrawn ? new Date(wr.date_withdrawn) : new Date();
+            const days = Math.max(1, Math.ceil((end - lodged) / (1000 * 60 * 60 * 24)));
+            return { days, daily_fee: wr.daily_storage_fee, total_fee: days * wr.daily_storage_fee };
+        },
+
+        // ==========================================
+        // ESCROW HELPERS
+        // ==========================================
+        createEscrow(batchId, buyerPhone, totalAmount) {
+            const batch = db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId);
+            if (!batch) return { error: 'Batch not found' };
+            if (batch.status !== 'closed' && batch.status !== 'warehoused') return { error: 'Batch not available for sale' };
+            const existing = db.prepare('SELECT * FROM escrow_transactions WHERE batch_id = ? AND status NOT IN (?, ?)').get(batchId, 'CANCELLED', 'RELEASED');
+            if (existing) return { error: 'Batch already has an active escrow' };
+            const platformFee = Math.round(totalAmount * 0.05);
+            const agentPayout = totalAmount - platformFee;
+            const id = crypto.randomUUID();
+            db.prepare(`INSERT INTO escrow_transactions (id, batch_id, agent_phone, buyer_phone, total_amount, platform_fee, agent_payout, status, payout_status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run(id, batchId, batch.agent_phone, buyerPhone, totalAmount, platformFee, agentPayout, 'PENDING_PAYMENT', 'PENDING', new Date().toISOString());
+            db.prepare("UPDATE batches SET buyer_phone = ?, status = 'funded' WHERE id = ?").run(buyerPhone, batchId);
+            return { id, batch_id: batchId, agent_phone: batch.agent_phone, buyer_phone: buyerPhone, total_amount: totalAmount, platform_fee: platformFee, agent_payout: agentPayout, status: 'PENDING_PAYMENT' };
+        },
+        lockEscrow(escrowId, momoReference) {
+            const esc = db.prepare('SELECT * FROM escrow_transactions WHERE id = ?').get(escrowId);
+            if (!esc) return { error: 'Escrow not found' };
+            if (esc.status !== 'PENDING_PAYMENT') return { error: `Cannot lock escrow in ${esc.status} state` };
+            const now = new Date().toISOString();
+            db.prepare("UPDATE escrow_transactions SET status = 'FUNDS_LOCKED', momo_reference = ?, locked_at = ? WHERE id = ?").run(momoReference || 'SANDBOX_' + Date.now(), now, escrowId);
+            return { ...esc, status: 'FUNDS_LOCKED', locked_at: now };
+        },
+        dispatchEscrow(escrowId, agentPhone, driverPhone, truckPlate) {
+            const esc = db.prepare('SELECT * FROM escrow_transactions WHERE id = ?').get(escrowId);
+            if (!esc) return { error: 'Escrow not found' };
+            if (esc.agent_phone !== agentPhone) return { error: 'Not your escrow' };
+            if (esc.status !== 'FUNDS_LOCKED') return { error: `Cannot dispatch in ${esc.status} state` };
+            if (!driverPhone || !driverPhone.trim()) return { error: 'Driver phone number is required' };
+            if (!truckPlate || !truckPlate.trim()) return { error: 'Truck plate number is required' };
+            const now = new Date().toISOString();
+            db.prepare("UPDATE escrow_transactions SET status = 'IN_TRANSIT', dispatched_at = ?, driver_phone = ?, truck_plate_number = ? WHERE id = ?").run(now, driverPhone.trim(), truckPlate.trim().toUpperCase(), escrowId);
+            db.prepare("UPDATE batches SET status = 'dispatched' WHERE id = ?").run(esc.batch_id);
+            return { ...esc, status: 'IN_TRANSIT', dispatched_at: now, driver_phone: driverPhone.trim(), truck_plate_number: truckPlate.trim().toUpperCase() };
+        },
+        releaseEscrow(escrowId, buyerPhone) {
+            const esc = db.prepare('SELECT * FROM escrow_transactions WHERE id = ?').get(escrowId);
+            if (!esc) return { error: 'Escrow not found' };
+            if (esc.buyer_phone !== buyerPhone) return { error: 'Not your escrow' };
+            if (esc.status !== 'IN_TRANSIT') return { error: `Cannot release in ${esc.status} state` };
+            const now = new Date().toISOString();
+            db.prepare("UPDATE escrow_transactions SET status = 'RELEASED', payout_status = 'RELEASED', released_at = ? WHERE id = ?").run(now, escrowId);
+            db.prepare("UPDATE batches SET status = 'received', sold_at = ? WHERE id = ?").run(now, esc.batch_id);
+            return { ...esc, status: 'RELEASED', released_at: now };
+        },
+        cancelEscrow(escrowId, phone) {
+            const esc = db.prepare('SELECT * FROM escrow_transactions WHERE id = ?').get(escrowId);
+            if (!esc) return { error: 'Escrow not found' };
+            if (esc.buyer_phone !== phone && phone !== 'ADMIN') return { error: 'Only buyer or admin can cancel' };
+            if (esc.status === 'RELEASED' || esc.status === 'CANCELLED') return { error: `Cannot cancel in ${esc.status} state` };
+            if (esc.status === 'IN_TRANSIT') return { error: 'Cannot cancel after dispatch — file a dispute instead' };
+            const now = new Date().toISOString();
+            db.prepare("UPDATE escrow_transactions SET status = 'CANCELLED', cancelled_at = ? WHERE id = ?").run(now, escrowId);
+            db.prepare("UPDATE batches SET buyer_phone = NULL, status = 'closed' WHERE id = ?").run(esc.batch_id);
+            return { ...esc, status: 'CANCELLED', cancelled_at: now };
+        },
+        disputeEscrow(escrowId, phone, reason) {
+            const esc = db.prepare('SELECT * FROM escrow_transactions WHERE id = ?').get(escrowId);
+            if (!esc) return { error: 'Escrow not found' };
+            if (esc.buyer_phone !== phone) return { error: 'Only buyer can dispute' };
+            if (esc.status !== 'IN_TRANSIT' && esc.status !== 'FUNDS_LOCKED') return { error: `Cannot dispute in ${esc.status} state` };
+            db.prepare("UPDATE escrow_transactions SET status = 'DISPUTED', notes = ? WHERE id = ?").run(reason, escrowId);
+            helpers.disputeBatch(esc.batch_id, reason);
+            return { ...esc, status: 'DISPUTED' };
+        },
+        adminResolveEscrow(escrowId, action, notes, releasePercentage) {
+            const esc = db.prepare('SELECT * FROM escrow_transactions WHERE id = ?').get(escrowId);
+            if (!esc) return { error: 'Escrow not found' };
+            if (esc.status !== 'DISPUTED') return { error: 'Escrow not in DISPUTED state' };
+            const now = new Date().toISOString();
+            if (action === 'partial') {
+                const pct = Number(releasePercentage);
+                if (isNaN(pct) || pct < 0 || pct > 100) return { error: 'release_percentage must be 0-100' };
+                const releasedAmount = Math.round(esc.agent_payout * pct / 100);
+                const refundedAmount = esc.agent_payout - releasedAmount;
+                const resolveNotes = `Partial: ${pct}% released (UGX ${releasedAmount}), ${100 - pct}% refunded (UGX ${refundedAmount}). ${notes || ''}`.trim();
+                db.prepare("UPDATE escrow_transactions SET status = 'RELEASED', payout_status = 'PARTIAL', released_at = ?, notes = ?, agent_payout = ? WHERE id = ?").run(now, resolveNotes, releasedAmount, escrowId);
+                db.prepare("UPDATE batches SET status = 'received', sold_at = ? WHERE id = ?").run(now, esc.batch_id);
+                helpers.resolveDispute(esc.batch_id, resolveNotes);
+                return { success: true, action: 'partial', release_percentage: pct, released_amount: releasedAmount, refunded_amount: refundedAmount };
+            } else if (action === 'release') {
+                db.prepare("UPDATE escrow_transactions SET status = 'RELEASED', payout_status = 'RELEASED', released_at = ?, notes = ? WHERE id = ?").run(now, notes || esc.notes, escrowId);
+                db.prepare("UPDATE batches SET status = 'received', sold_at = ? WHERE id = ?").run(now, esc.batch_id);
+                helpers.resolveDispute(esc.batch_id, 'Admin released: ' + (notes || ''));
+            } else {
+                db.prepare("UPDATE escrow_transactions SET status = 'CANCELLED', cancelled_at = ?, notes = ? WHERE id = ?").run(now, notes || esc.notes, escrowId);
+                db.prepare("UPDATE batches SET buyer_phone = NULL, status = 'closed' WHERE id = ?").run(esc.batch_id);
+                helpers.resolveDispute(esc.batch_id, 'Admin refunded: ' + (notes || ''));
+            }
+            return { success: true, action };
+        },
+        getEscrow(escrowId) {
+            return db.prepare('SELECT * FROM escrow_transactions WHERE id = ?').get(escrowId) || null;
+        },
+        getEscrowByBatch(batchId) {
+            return db.prepare("SELECT * FROM escrow_transactions WHERE batch_id = ? AND status NOT IN ('CANCELLED') ORDER BY created_at DESC LIMIT 1").get(batchId) || null;
+        },
+        getBuyerEscrows(buyerPhone) {
+            return db.prepare('SELECT e.*, b.crop, b.total_quantity_kg, b.batch_code FROM escrow_transactions e JOIN batches b ON e.batch_id = b.id WHERE e.buyer_phone = ? ORDER BY e.created_at DESC').all(buyerPhone);
+        },
+        getAgentEscrows(agentPhone) {
+            return db.prepare('SELECT e.*, b.crop, b.total_quantity_kg, b.batch_code FROM escrow_transactions e JOIN batches b ON e.batch_id = b.id WHERE e.agent_phone = ? ORDER BY e.created_at DESC').all(agentPhone);
+        },
+        getMarketplaceBatches() {
+            return db.prepare(`
+                SELECT b.id, b.batch_code, b.crop, b.total_quantity_kg, b.purchase_count,
+                       b.overall_grade, b.status, b.created_at, b.sale_price,
+                       a.district as agent_district
+                FROM batches b
+                JOIN agents a ON b.agent_phone = a.phone
+                WHERE b.status IN ('closed', 'warehoused')
+                AND b.id NOT IN (SELECT batch_id FROM escrow_transactions WHERE status NOT IN ('CANCELLED', 'RELEASED'))
+                ORDER BY b.created_at DESC
+            `).all();
+        },
+        getMarketplaceBatchDetail(batchId) {
+            const batch = db.prepare(`
+                SELECT b.*, a.district as agent_district
+                FROM batches b
+                JOIN agents a ON b.agent_phone = a.phone
+                WHERE b.id = ?
+            `).get(batchId);
+            if (!batch) return null;
+            const wr = db.prepare('SELECT subcounty_location, facility_type, photo_url FROM warehouse_receipts WHERE batch_id = ?').get(batchId);
+            const trust = helpers.calculateTrustScore(batch.agent_phone);
+            return { ...batch, warehouse: wr || null, agent_trust_tier: trust.tier };
+        },
+        getStaleEscrows() {
+            const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+            return db.prepare("SELECT * FROM escrow_transactions WHERE status = 'FUNDS_LOCKED' AND locked_at < ?").all(cutoff);
         }
     };
     return helpers;
@@ -609,6 +889,15 @@ function createApp(db, sms, opts) {
             let profile = getProfile(phoneNumber);
             let response = "";
 
+            // Crop code map — numeric codes for fast feature-phone input (Agent USSD Purchase)
+            const CROP_CODES = {
+                '1': 'Maize', '2': 'Beans', '3': 'Rice', '4': 'Coffee',
+                '5': 'Cassava', '6': 'G-Nuts', '7': 'Sorghum', '8': 'Millet',
+                '9': 'Matooke', '10': 'Soya Beans', '11': 'Sesame (Simsim)',
+                '12': 'Sweet Potatoes', '13': 'Irish Potatoes',
+                '14': 'Tomatoes', '15': 'Onions'
+            };
+
             // ==========================================
             // 0. MAIN MENU
             // ==========================================
@@ -619,7 +908,8 @@ function createApp(db, sms, opts) {
 3. I am a Buyer
 4. Check Market Prices
 5. My Listings
-6. Rate a Seller`;
+6. Rate a Seller
+7. Agent Purchase`;
             }
 
             // ==========================================
@@ -933,6 +1223,114 @@ ${sellerPhone} now has ${rep.avg}/5 from ${rep.sales} buyer(s).`;
                     });
                     txt += `\nTotal: ${myListings.length} listing(s)`;
                     response = txt;
+                }
+            }
+
+            // ==========================================
+            // 7. AGENT PURCHASE (USSD Fallback — offline survival)
+            // ==========================================
+
+            // Step 1: Enter PIN
+            else if (text === "7") {
+                response = `CON Agent Purchase (Offline Mode)
+Enter your 4-digit PIN:`;
+            }
+            // Step 2: Authenticate, show crop codes
+            else if (text.startsWith("7*") && parts.length === 2) {
+                const agentPin = parts[1];
+                const auth = helpers.authenticateAgent(phoneNumber, agentPin);
+                if (auth.error) {
+                    response = `END ${auth.error}`;
+                } else {
+                    response = `CON Crop Code:
+1.Maize 2.Beans 3.Rice
+4.Coffee 5.Cassava 6.G-Nuts
+7.Sorghum 8.Millet 9.Matooke
+10.Soya 11.Simsim 12.S.Potato
+Enter code:`;
+                }
+            }
+            // Step 3: Ask quantity
+            else if (text.startsWith("7*") && parts.length === 3) {
+                const cropCode = parts[2];
+                if (!CROP_CODES[cropCode]) {
+                    response = `END Invalid crop code. Dial back and try again.`;
+                } else {
+                    response = `CON ${CROP_CODES[cropCode]}
+Enter quantity (kg):`;
+                }
+            }
+            // Step 4: Ask price per kg
+            else if (text.startsWith("7*") && parts.length === 4) {
+                const qty = parseFloat(parts[3]);
+                if (isNaN(qty) || qty <= 0) {
+                    response = `END Invalid quantity. Dial back and try again.`;
+                } else {
+                    response = `CON ${qty}kg noted.
+Price per kg (UGX):`;
+                }
+            }
+            // Step 5: Ask farmer phone
+            else if (text.startsWith("7*") && parts.length === 5) {
+                const price = parseInt(parts[4]);
+                if (isNaN(price) || price <= 0) {
+                    response = `END Invalid price. Dial back and try again.`;
+                } else {
+                    response = `CON Farmer's phone number:
+(e.g. +256771234567)`;
+                }
+            }
+            // Step 6: Confirm and log purchase
+            else if (text.startsWith("7*") && parts.length === 6) {
+                const agentPin = parts[1];
+                const auth = helpers.authenticateAgent(phoneNumber, agentPin);
+                if (auth.error) {
+                    response = `END Session error. Dial back.`;
+                } else {
+                    const cropName = CROP_CODES[parts[2]];
+                    const qty = parseFloat(parts[3]);
+                    const price = parseInt(parts[4]);
+                    const farmerPhone = parts[5];
+
+                    if (!cropName || isNaN(qty) || isNaN(price)) {
+                        response = `END Invalid data. Dial back and try again.`;
+                    } else {
+                        const farmer = helpers.getProfile(farmerPhone);
+                        if (!farmer) {
+                            response = `END Farmer ${farmerPhone} not registered. They must dial in and register first.`;
+                        } else {
+                            const totalPrice = Math.round(qty * price);
+                            const purchase = {
+                                id: crypto.randomUUID(),
+                                agent_phone: auth.agent.phone,
+                                farmer_phone: farmerPhone,
+                                listing_id: null,
+                                crop: cropName,
+                                quantity_kg: qty,
+                                unit_price: price,
+                                total_price: totalPrice,
+                                price_unit: 'per kg',
+                                grade: null,
+                                moisture_level: null,
+                                transaction_time: new Date().toISOString(),
+                                synced_at: new Date().toISOString(),
+                                lat: null, lng: null,
+                                notes: 'USSD purchase'
+                            };
+                            helpers.logPurchase(purchase);
+
+                            // SMS receipt to farmer (fire-and-forget, don't block USSD response)
+                            const agentName = auth.agent.name || phoneNumber;
+                            sendSms(sms, farmerPhone, `Agri-Bridge: Agent ${agentName} purchased ${qty}kg ${cropName} from you for ${totalPrice.toLocaleString()} UGX. Ref: ${purchase.id.slice(0, 8)}`);
+
+                            response = `END Purchase logged!
+${qty}kg ${cropName} @ ${price}/kg
+Total: ${totalPrice.toLocaleString()} UGX
+Farmer: ${farmer.name}
+SMS receipt sent to ${farmerPhone}
+Ref: ${purchase.id.slice(0, 8)}`;
+                        }
+                    }
                 }
             }
 
