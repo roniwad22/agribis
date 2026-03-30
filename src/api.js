@@ -872,7 +872,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         const result = helpers.releaseEscrow(req.params.id, buyer.phone);
         if (result.error) return res.status(400).json({ error: result.error });
         // SMS: notify agent that funds are released
-        sendSms(sms, result.agent_phone, `Agri-Bridge: Buyer has confirmed delivery! UGX ${result.agent_payout} will be sent to your MoMo. Thank you!`);
+        sendSms(sms, result.agent_phone, `Agri-Bridge: Buyer confirmed delivery! UGX ${result.agent_payout} payout queued — processed within 24 hours.`);
         res.json({ success: true, escrow_status: 'RELEASED' });
     });
 
