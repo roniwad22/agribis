@@ -11,7 +11,15 @@
     "ussd:farmer": "node scripts/ussd-sim.js --demo farmer",
     "ussd:buyer": "node scripts/ussd-sim.js --demo buyer",
     "ussd:prices": "node scripts/ussd-sim.js --demo prices",
-    "ussd:full": "node scripts/ussd-sim.js --demo full"
+    "ussd:full": "node scripts/ussd-sim.js --demo full",
+    "seed": "node scripts/seed.js",
+    "seed:reset": "node scripts/seed.js --reset",
+    "docker:build": "docker build -t agribis .",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop agribis",
+    "pm2:logs": "pm2 logs agribis"
   },
   "keywords": [],
   "author": "",
