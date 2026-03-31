@@ -837,6 +837,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         }
         // SMS: notify agent of new order
         sendSms(sms, result.agent_phone, `Agri-Bridge: A buyer has placed an order for your batch. Amount: UGX ${amount}. Status: ${result.status}. Check your Agent Pro dashboard.`);
+        if (helpers._notify) helpers._notify.event('New Escrow Created', { Amount: `UGX ${Number(amount).toLocaleString()}`, Buyer: result.buyer_phone, Status: result.status });
         res.json(result);
     });
 
@@ -899,6 +900,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         if (result.error) return res.status(400).json({ error: result.error });
         // SMS: notify agent of dispute
         sendSms(sms, result.agent_phone, `Agri-Bridge: DISPUTE filed on your order. Reason: ${reason}. Your trust score is frozen until resolved. Contact admin.`);
+        if (helpers._notify) helpers._notify.error('Dispute Filed', `Buyer: ${buyer.phone}\nReason: ${reason}\nEscrow: ${req.params.id}`);
         res.json({ success: true, escrow_status: 'DISPUTED' });
     });
 
@@ -1010,6 +1012,57 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
             return result;
         }).filter(Boolean);
         res.json({ warnings_sent: warnings.length, auto_cancelled: cancelled.length });
+    });
+
+    // GET /api/admin/request-log — Recent API/USSD requests for pilot observability
+    router.get('/admin/request-log', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        const limit = Math.min(Number(req.query.limit) || 100, 500);
+        const type = req.query.type; // 'API', 'USSD', 'ERROR', or undefined for all
+        let rows;
+        if (type) {
+            rows = db.prepare('SELECT * FROM request_log WHERE type = ? ORDER BY id DESC LIMIT ?').all(type, limit);
+        } else {
+            rows = db.prepare('SELECT * FROM request_log ORDER BY id DESC LIMIT ?').all(limit);
+        }
+        res.json(rows);
+    });
+
+    // GET /api/admin/agents/enriched — Agent list with trust scores for admin UI
+    router.get('/admin/agents/enriched', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        const agents = getAllAgents();
+        const enriched = agents.map(a => {
+            const trust = helpers.calculateTrustScore(a.phone);
+            const escrows = helpers.getAgentEscrows(a.phone);
+            const batches = db.prepare('SELECT COUNT(*) as cnt, COALESCE(SUM(total_quantity_kg),0) as kg FROM batches WHERE agent_phone = ?').get(a.phone);
+            const escrowVolume = escrows.reduce((sum, e) => sum + (e.total_amount || 0), 0);
+            return {
+                ...a,
+                trust_tier: trust.tier,
+                trust_score: trust.score,
+                verified: a.status === 'active' ? 1 : 0,
+                suspended: a.status === 'suspended' ? 1 : 0,
+                batch_count: batches.cnt,
+                total_quantity_kg: batches.kg,
+                escrow_count: escrows.length,
+                escrow_volume: escrowVolume
+            };
+        });
+        res.json(enriched);
+    });
+
+    // PATCH /api/admin/agent/:phone/:action — Approve/suspend/unsuspend agent
+    router.patch('/admin/agent/:phone/:action', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        const { phone, action } = req.params;
+        const validActions = { approve: 'active', suspend: 'suspended', unsuspend: 'active' };
+        const newStatus = validActions[action];
+        if (!newStatus) return res.status(400).json({ error: 'Invalid action. Use approve, suspend, or unsuspend.' });
+        const agent = db.prepare('SELECT * FROM agents WHERE phone = ?').get(phone);
+        if (!agent) return res.status(404).json({ error: 'Agent not found' });
+        helpers.setAgentStatus(phone, newStatus);
+        res.json({ success: true, phone, status: newStatus });
     });
 
     // POST /api/escrow/:id/simulate-payment — Dev-only: simulate MoMo payment

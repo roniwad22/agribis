@@ -11,6 +11,34 @@ function hashPin(pin) {
     return crypto.createHash('sha256').update(String(pin)).digest('hex');
 }
 
+// ==========================================
+// DISCORD WEBHOOK NOTIFIER (fire-and-forget)
+// ==========================================
+function createNotifier(webhookUrl) {
+    if (!webhookUrl) return { send: () => {}, error: () => {}, event: () => {} };
+    const post = (payload) => {
+        try {
+            const url = new URL(webhookUrl);
+            const data = JSON.stringify(payload);
+            const options = { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } };
+            const lib = url.protocol === 'https:' ? require('https') : require('http');
+            const req = lib.request(url, options);
+            req.on('error', () => {}); // fire-and-forget
+            req.write(data);
+            req.end();
+        } catch (_) {}
+    };
+    return {
+        send(msg) { post({ content: msg }); },
+        error(context, err) {
+            post({ embeds: [{ title: 'Error', color: 0xc62828, description: `**${context}**\n\`\`\`${String(err).slice(0, 500)}\`\`\``, timestamp: new Date().toISOString() }] });
+        },
+        event(title, fields) {
+            post({ embeds: [{ title, color: 0x1565c0, fields: Object.entries(fields).map(([k, v]) => ({ name: k, value: String(v), inline: true })), timestamp: new Date().toISOString() }] });
+        }
+    };
+}
+
 function parseCookies(req) {
     const list = {};
     const header = req.headers.cookie;
@@ -229,6 +257,17 @@ function createDb(dbPath) {
         disbursement_ref TEXT,
         FOREIGN KEY (batch_id) REFERENCES batches(id),
         FOREIGN KEY (agent_phone) REFERENCES agents(phone)
+      );
+      CREATE TABLE IF NOT EXISTS request_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT NOT NULL,
+        method TEXT,
+        path TEXT,
+        phone TEXT,
+        status_code INTEGER,
+        duration_ms INTEGER,
+        error TEXT,
+        type TEXT DEFAULT 'API'
       );
     `);
     return db;
@@ -947,6 +986,7 @@ function createHelpers(db) {
 // ==========================================
 function createApp(db, sms, opts) {
     const adminSecret = opts?.adminSecret || process.env.ADMIN_SECRET || '';
+    const notify = createNotifier(opts?.discordWebhook || process.env.DISCORD_WEBHOOK_URL);
 
     const app = express();
     app.use(express.urlencoded({ extended: true }));
@@ -957,6 +997,23 @@ function createApp(db, sms, opts) {
         res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
         next();
     });
+
+    // Request logger — logs all /api and /ussd hits for pilot observability
+    const logInsert = db.prepare('INSERT INTO request_log (timestamp, method, path, phone, status_code, duration_ms, error, type) VALUES (?,?,?,?,?,?,?,?)');
+    app.use((req, res, next) => {
+        if (!req.path.startsWith('/api') && !req.path.startsWith('/ussd')) return next();
+        const start = Date.now();
+        const origEnd = res.end;
+        res.end = function(...args) {
+            const duration = Date.now() - start;
+            const phone = req.headers['x-phone'] || req.body?.phone || req.body?.phoneNumber || '';
+            const type = req.path.startsWith('/ussd') ? 'USSD' : 'API';
+            try { logInsert.run(new Date().toISOString(), req.method, req.path, phone, res.statusCode, duration, null, type); } catch (_) {}
+            origEnd.apply(this, args);
+        };
+        next();
+    });
+
     app.use('/app', express.static(path.join(__dirname, '..', 'public')));
 
     const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -964,6 +1021,7 @@ function createApp(db, sms, opts) {
     app.use('/uploads', express.static(uploadsDir));
 
     const helpers = createHelpers(db);
+    helpers._notify = notify; // expose for API routes
     const { getProfile, saveProfile, addListing, getListing, getApprovedListings, getAllListings, updateListingStatus, getVerification, getPrices, getPricesMap, setPrices, getAllAgents, setAgentStatus } = helpers;
 
     app.use('/api', createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts));
@@ -1632,6 +1690,15 @@ Ref: ${purchase.id.slice(0, 8)}`;
         res.redirect('/');
     });
 
+    // Global error handler — never crash, always log
+    app.use((err, req, res, _next) => {
+        const phone = req.headers['x-phone'] || req.body?.phone || '';
+        try { logInsert.run(new Date().toISOString(), req.method, req.path, phone, 500, 0, String(err.message || err).slice(0, 500), 'ERROR'); } catch (_) {}
+        notify.error(`${req.method} ${req.path}`, err.message || err);
+        console.error('[ERROR]', req.method, req.path, err);
+        res.status(500).json({ error: 'Internal server error' });
+    });
+
     return app;
 }
 
@@ -1668,6 +1735,19 @@ if (require.main === module) {
     });
 
     seedPrices(db);
+
+    // Auto-seed demo data on first boot if SEED_DEMO=true
+    if (process.env.SEED_DEMO === 'true') {
+        const agentCount = db.prepare('SELECT COUNT(*) as c FROM agents').get().c;
+        if (agentCount === 0) {
+            try {
+                require('../scripts/seed');
+            } catch (e) {
+                console.warn('[SEED] Auto-seed failed:', e.message);
+            }
+        }
+    }
+
     const app = createApp(db, createSms());
 
     const PORT = process.env.PORT || 3000;

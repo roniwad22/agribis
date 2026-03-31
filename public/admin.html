@@ -50,6 +50,20 @@
   .trust-DIAMOND { color: #1565c0; } .trust-GOLD { color: #f9a825; }
   .trust-SILVER { color: #757575; } .trust-BRONZE { color: #a1887f; }
   .trust-NONE { color: #bdbdbd; }
+  .badge-active { background: #2e7d32; }
+  .badge-suspended { background: #c62828; }
+  .badge-unverified { background: #9e9e9e; }
+  .agent-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .agent-actions .btn { font-size: 12px; padding: 6px 10px; }
+  .btn-approve { background: #2e7d32; color: #fff; }
+  .btn-suspend { background: #c62828; color: #fff; }
+  .log-row { font-size: 12px; padding: 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; }
+  .log-method { font-weight: 700; font-size: 11px; padding: 1px 6px; border-radius: 3px; color: #fff; }
+  .log-GET { background: #1565c0; } .log-POST { background: #2e7d32; }
+  .log-PATCH { background: #f57f17; color: #333; } .log-DELETE { background: #c62828; }
+  .log-status-ok { color: #2e7d32; } .log-status-err { color: #c62828; }
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .filter-bar select, .filter-bar input { padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
   #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
   #app-screen { display: none; }
   .login-box { background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 90%; max-width: 360px; }
@@ -78,6 +92,8 @@
     <div class="tab active" onclick="switchTab('overview')">Overview</div>
     <div class="tab" onclick="switchTab('arbitration')">Arbitration</div>
     <div class="tab" onclick="switchTab('payouts')">Payouts</div>
+    <div class="tab" onclick="switchTab('agents')">Agents</div>
+    <div class="tab" onclick="switchTab('activity')">Activity</div>
   </div>
 
   <!-- OVERVIEW PANEL -->
@@ -98,6 +114,31 @@
       <button class="btn btn-export" onclick="exportCsv()">Export CSV for MoMo Bulk Pay</button>
     </div>
     <div id="payouts-list"><div class="spinner">Loading...</div></div>
+  </div>
+
+  <!-- AGENTS PANEL -->
+  <div id="panel-agents" class="panel">
+    <div id="agents-list"><div class="spinner">Loading...</div></div>
+  </div>
+
+  <!-- ACTIVITY LOG PANEL -->
+  <div id="panel-activity" class="panel">
+    <div class="filter-bar">
+      <select id="log-method-filter" onchange="loadActivity()">
+        <option value="">All Methods</option>
+        <option value="GET">GET</option>
+        <option value="POST">POST</option>
+        <option value="PATCH">PATCH</option>
+        <option value="DELETE">DELETE</option>
+      </select>
+      <select id="log-status-filter" onchange="loadActivity()">
+        <option value="">All Status</option>
+        <option value="ok">2xx OK</option>
+        <option value="err">4xx/5xx Error</option>
+      </select>
+      <input type="text" id="log-path-filter" placeholder="Filter by path..." style="flex:1;min-width:120px;" oninput="clearTimeout(window._logDebounce);window._logDebounce=setTimeout(loadActivity,400);">
+    </div>
+    <div id="activity-list"><div class="spinner">Loading...</div></div>
   </div>
 </div>
 
@@ -175,7 +216,7 @@
 
   function switchTab(name) {
     document.querySelectorAll('.tab').forEach((t, i) => {
-      const panels = ['overview', 'arbitration', 'payouts'];
+      const panels = ['overview', 'arbitration', 'payouts', 'agents', 'activity'];
       t.classList.toggle('active', panels[i] === name);
     });
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -183,6 +224,8 @@
     if (name === 'overview') loadOverview();
     if (name === 'arbitration') loadArbitration();
     if (name === 'payouts') loadPayouts();
+    if (name === 'agents') loadAgents();
+    if (name === 'activity') loadActivity();
   }
 
   // ==========================================
@@ -346,6 +389,91 @@
 
   function exportCsv() {
     window.open(API + '/api/admin/payout/export?secret=' + encodeURIComponent(adminSecret));
+  }
+
+  // ==========================================
+  // AGENT MANAGEMENT
+  // ==========================================
+  async function loadAgents() {
+    const el = document.getElementById('agents-list');
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    try {
+      const r = await fetch(API + '/api/admin/agents/enriched', { headers: adminHeaders() });
+      const agents = await r.json();
+      if (!agents.length) { el.innerHTML = '<div class="empty">No agents registered yet.</div>'; return; }
+      el.innerHTML = agents.map(a => {
+        const trustClass = 'trust-' + (a.trust_tier || 'NONE');
+        const verified = a.verified === 1;
+        const suspended = a.suspended === 1;
+        const statusBadge = suspended ? '<span class="badge badge-suspended">SUSPENDED</span>'
+          : verified ? '<span class="badge badge-active">ACTIVE</span>'
+          : '<span class="badge badge-unverified">UNVERIFIED</span>';
+        return `
+          <div class="card" style="border-left:4px solid ${suspended ? '#c62828' : verified ? '#2e7d32' : '#9e9e9e'};">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span class="card-title">${esc(a.name)}</span>
+              ${statusBadge}
+            </div>
+            <div class="info-row"><span>Phone</span><span>${esc(a.phone)}</span></div>
+            <div class="info-row"><span>District</span><span>${esc(a.district || '—')}</span></div>
+            <div class="info-row"><span>Trust</span><span class="trust-tier ${trustClass}">${a.trust_tier || 'NONE'} (${a.trust_score ?? 0})</span></div>
+            <div class="info-row"><span>Batches</span><span>${a.batch_count ?? 0} (${a.total_quantity_kg ?? 0} kg)</span></div>
+            <div class="info-row"><span>Escrows</span><span>${a.escrow_count ?? 0} — ${formatUGX(a.escrow_volume ?? 0)}</span></div>
+            <div class="info-row"><span>Joined</span><span>${formatDate(a.created_at)}</span></div>
+            <div class="agent-actions">
+              ${!verified ? `<button class="btn btn-approve" onclick="agentAction('${esc(a.phone)}','approve')">Approve</button>` : ''}
+              ${!suspended ? `<button class="btn btn-suspend" onclick="agentAction('${esc(a.phone)}','suspend')">Suspend</button>`
+                : `<button class="btn btn-approve" onclick="agentAction('${esc(a.phone)}','unsuspend')">Unsuspend</button>`}
+            </div>
+          </div>`;
+      }).join('');
+    } catch (e) { el.innerHTML = '<div class="empty">Failed to load agents.</div>'; }
+  }
+
+  async function agentAction(phone, action) {
+    if (!confirm(`${action.toUpperCase()} agent ${phone}?`)) return;
+    try {
+      const r = await fetch(API + '/api/admin/agent/' + encodeURIComponent(phone) + '/' + action, {
+        method: 'PATCH', headers: adminHeaders()
+      });
+      const d = await r.json();
+      if (!r.ok) return alert(d.error || 'Action failed');
+      loadAgents();
+    } catch (e) { alert('Network error'); }
+  }
+
+  // ==========================================
+  // ACTIVITY LOG
+  // ==========================================
+  async function loadActivity() {
+    const el = document.getElementById('activity-list');
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    const method = document.getElementById('log-method-filter').value;
+    const statusFilter = document.getElementById('log-status-filter').value;
+    const pathFilter = document.getElementById('log-path-filter').value.trim();
+    try {
+      let url = API + '/api/admin/request-log?limit=100';
+      if (method) url += '&method=' + method;
+      if (pathFilter) url += '&path=' + encodeURIComponent(pathFilter);
+      const r = await fetch(url, { headers: adminHeaders() });
+      let logs = await r.json();
+      if (statusFilter === 'ok') logs = logs.filter(l => l.status >= 200 && l.status < 400);
+      if (statusFilter === 'err') logs = logs.filter(l => l.status >= 400);
+      if (!logs.length) { el.innerHTML = '<div class="empty">No matching requests.</div>'; return; }
+      el.innerHTML = '<div class="card" style="padding:0;">' + logs.map(l => {
+        const statusClass = l.status < 400 ? 'log-status-ok' : 'log-status-err';
+        const methodClass = 'log-' + (l.method || 'GET');
+        return `
+          <div class="log-row">
+            <span><span class="log-method ${methodClass}">${esc(l.method)}</span> ${esc(l.path)}</span>
+            <span>
+              <span class="${statusClass}">${l.status}</span>
+              · ${l.duration_ms}ms
+              · ${formatDate(l.created_at)}
+            </span>
+          </div>`;
+      }).join('') + '</div>';
+    } catch (e) { el.innerHTML = '<div class="empty">Failed to load activity log.</div>'; }
   }
 
   // Boot — restore session
