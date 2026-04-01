@@ -874,6 +874,17 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         if (result.error) return res.status(400).json({ error: result.error });
         // SMS: notify agent that funds are released
         sendSms(sms, result.agent_phone, `Agri-Bridge: Buyer confirmed delivery! UGX ${result.agent_payout} payout queued — processed within 24 hours.`);
+        // Fair Trade SMS: notify each farmer of the final sale price
+        try {
+            const batch = helpers.getBatch(result.batch_id);
+            if (batch && batch.sale_price) {
+                const purchases = helpers.getBatchPurchases(result.batch_id);
+                const salePricePerKg = Math.round(batch.sale_price / batch.total_quantity_kg);
+                for (const p of purchases) {
+                    sendSms(sms, p.farmer_phone, `AgriBridge: Your ${p.quantity_kg}kg ${p.crop} sold in Kampala for UGX ${salePricePerKg}/kg. You received UGX ${p.unit_price}/kg. Market price: UGX ${salePricePerKg}/kg.`);
+                }
+            }
+        } catch (_) {} // fire-and-forget — never block release
         res.json({ success: true, escrow_status: 'RELEASED' });
     });
 
