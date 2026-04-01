@@ -23,7 +23,9 @@ const crypto = require('crypto');
 // Load the app's own modules so we use the same schema + helpers
 const { createDb, createHelpers, seedPrices, hashPin } = require('../src/app');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'agribis.db');
+const DB_PATH = process.env.DB_PATH
+    ? path.resolve(process.env.DB_PATH)
+    : path.join(__dirname, '..', 'agribis.db');
 const RESET = process.argv.includes('--reset');
 
 function run() {
