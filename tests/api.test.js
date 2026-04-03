@@ -1380,6 +1380,59 @@ describe('Admin: CSV export formatting', () => {
     });
 });
 
+describe('Admin: payout history', () => {
+    it('returns disbursed payouts with details', async () => {
+        const { app, helpers, db } = makeApp({ adminSecret: TEST_ADMIN_SECRET });
+        setupAgent(helpers, '+256700900003', '1234', 'Gulu');
+        const batchId = makeClosedBatch(helpers, db, 'b-hist1', '+256700900003');
+        setupBuyer(helpers, '+256700900004', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700900004', 200000);
+        helpers.lockEscrow(esc.id, 'MOMO_REF');
+        helpers.dispatchEscrow(esc.id, '+256700900003', '0776666666', 'UAB 700Z');
+        helpers.releaseEscrow(esc.id, '+256700900004');
+        helpers.disburseEscrow(esc.id, 'MTN-HIST-001');
+        const res = await req(app, 'get', '/api/admin/payout/history', null, { 'x-admin-secret': TEST_ADMIN_SECRET });
+        assert.equal(res.status, 200);
+        assert.ok(Array.isArray(res.body));
+        assert.equal(res.body.length, 1);
+        assert.equal(res.body[0].disbursement_ref, 'MTN-HIST-001');
+    });
+
+    it('returns empty array when no disbursements', async () => {
+        const { app } = makeApp({ adminSecret: TEST_ADMIN_SECRET });
+        const res = await req(app, 'get', '/api/admin/payout/history', null, { 'x-admin-secret': TEST_ADMIN_SECRET });
+        assert.equal(res.status, 200);
+        assert.deepEqual(res.body, []);
+    });
+
+    it('rejects without admin secret', async () => {
+        const { app } = makeApp({ adminSecret: TEST_ADMIN_SECRET });
+        const res = await req(app, 'get', '/api/admin/payout/history');
+        assert.equal(res.status, 403);
+    });
+});
+
+describe('Admin: pending payouts include wait time', () => {
+    it('includes wait_hours and urgent fields', async () => {
+        const { app, helpers, db } = makeApp({ adminSecret: TEST_ADMIN_SECRET });
+        setupAgent(helpers, '+256700900010', '1234', 'Lira');
+        const batchId = makeClosedBatch(helpers, db, 'b-wait1', '+256700900010');
+        setupBuyer(helpers, '+256700900011', '5678');
+        const esc = helpers.createEscrow(batchId, '+256700900011', 200000);
+        helpers.lockEscrow(esc.id, 'MOMO_WAIT');
+        helpers.dispatchEscrow(esc.id, '+256700900010', '0777777777', 'UAB 800Z');
+        helpers.releaseEscrow(esc.id, '+256700900011');
+        const res = await req(app, 'get', '/api/admin/payout/pending', null, { 'x-admin-secret': TEST_ADMIN_SECRET });
+        assert.equal(res.status, 200);
+        assert.ok(res.body.length >= 1);
+        const payout = res.body[0];
+        assert.ok('wait_hours' in payout);
+        assert.ok('urgent' in payout);
+        assert.equal(typeof payout.wait_hours, 'number');
+        assert.equal(typeof payout.urgent, 'boolean');
+    });
+});
+
 describe('Farmer listing dispatches leads to agents', () => {
     it('returns agents_notified count on farmer listing', async () => {
         const { app, helpers } = makeApp();

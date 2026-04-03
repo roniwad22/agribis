@@ -945,7 +945,7 @@ function createHelpers(db) {
             });
         },
         getPendingPayouts() {
-            return db.prepare(`
+            const rows = db.prepare(`
                 SELECT e.*, b.crop, b.total_quantity_kg, b.batch_code,
                        a.name as agent_name, a.district as agent_district
                 FROM escrow_transactions e
@@ -954,6 +954,27 @@ function createHelpers(db) {
                 WHERE e.status = 'RELEASED' AND e.payout_status IN ('RELEASED', 'PARTIAL')
                 ORDER BY e.released_at ASC
             `).all();
+            // Enrich with wait time for admin prioritization
+            const now = Date.now();
+            return rows.map(r => {
+                const waitMs = now - new Date(r.released_at).getTime();
+                const waitHours = Math.round(waitMs / (1000 * 60 * 60) * 10) / 10;
+                return { ...r, wait_hours: waitHours, urgent: waitHours >= 12 };
+            });
+        },
+        getPayoutHistory(limit = 50) {
+            return db.prepare(`
+                SELECT e.id, e.batch_id, e.agent_phone, e.agent_payout, e.platform_fee,
+                       e.payout_status, e.released_at, e.disbursed_at, e.disbursement_ref,
+                       b.crop, b.total_quantity_kg, b.batch_code,
+                       a.name as agent_name
+                FROM escrow_transactions e
+                JOIN batches b ON e.batch_id = b.id
+                JOIN agents a ON e.agent_phone = a.phone
+                WHERE e.payout_status = 'DISBURSED'
+                ORDER BY e.disbursed_at DESC
+                LIMIT ?
+            `).all(limit);
         },
         disburseEscrow(escrowId, disbursementRef) {
             const esc = db.prepare('SELECT * FROM escrow_transactions WHERE id = ?').get(escrowId);

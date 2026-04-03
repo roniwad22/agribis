@@ -27,6 +27,8 @@
   .badge-timeout { background: #e65100; }
   .badge-pending { background: #1565c0; }
   .badge-disbursed { background: #2e7d32; }
+  .badge-urgent { background: #c62828; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
   .info-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; border-bottom: 1px solid #f5f5f5; }
   .info-row:last-child { border-bottom: none; }
   .btn { display: inline-block; padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; margin: 4px 4px 4px 0; }
@@ -110,10 +112,12 @@
 
   <!-- PAYOUTS PANEL -->
   <div id="panel-payouts" class="panel">
-    <div style="margin-bottom:10px;">
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
       <button class="btn btn-export" onclick="exportCsv()">Export CSV for MoMo Bulk Pay</button>
+      <button class="btn" id="btn-toggle-history" onclick="togglePayoutHistory()">Show History</button>
     </div>
     <div id="payouts-list"><div class="spinner">Loading...</div></div>
+    <div id="payouts-history" style="display:none;margin-top:16px;"></div>
   </div>
 
   <!-- AGENTS PANEL -->
@@ -345,19 +349,22 @@
       const r = await fetch(API + '/api/admin/payout/pending', { headers: adminHeaders() });
       const items = await r.json();
       if (!items.length) { el.innerHTML = '<div class="empty">No pending payouts. All clear.</div>'; return; }
-      el.innerHTML = items.map(item => `
-        <div class="card">
+      el.innerHTML = items.map(item => {
+        const urgentBadge = item.urgent ? '<span class="badge badge-urgent">URGENT</span>' : '';
+        const waitLabel = item.wait_hours >= 1 ? `${item.wait_hours}h waiting` : 'Just released';
+        return `
+        <div class="card" style="${item.urgent ? 'border-left:4px solid #c62828;' : ''}">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
             <span class="card-title">${esc(item.agent_name)}</span>
-            <span class="badge badge-pending">PENDING</span>
+            <div>${urgentBadge} <span class="badge badge-pending">PENDING</span></div>
           </div>
           <div class="info-row"><span>Phone</span><span>${esc(item.agent_phone)}</span></div>
           <div class="info-row"><span>Amount</span><strong style="color:#2e7d32;">${formatUGX(item.agent_payout)}</strong></div>
           <div class="info-row"><span>Batch</span><span>${esc(item.batch_code)} — ${esc(item.crop)} ${item.total_quantity_kg}kg</span></div>
-          <div class="info-row"><span>Released</span><span>${formatDate(item.released_at)}</span></div>
+          <div class="info-row"><span>Released</span><span>${formatDate(item.released_at)} (${waitLabel})</span></div>
           <button class="btn btn-disburse" style="margin-top:8px;" onclick="openDisburseModal('${esc(item.id)}', '${esc(item.agent_name)}', ${item.agent_payout})">Mark Disbursed</button>
-        </div>
-      `).join('');
+        </div>`;
+      }).join('');
     } catch (e) { el.innerHTML = '<div class="empty">Failed to load payouts.</div>'; }
   }
 
@@ -389,6 +396,34 @@
 
   function exportCsv() {
     window.open(API + '/api/admin/payout/export?secret=' + encodeURIComponent(adminSecret));
+  }
+
+  let historyVisible = false;
+  async function togglePayoutHistory() {
+    const el = document.getElementById('payouts-history');
+    const btn = document.getElementById('btn-toggle-history');
+    historyVisible = !historyVisible;
+    if (!historyVisible) { el.style.display = 'none'; btn.textContent = 'Show History'; return; }
+    btn.textContent = 'Hide History';
+    el.style.display = 'block';
+    el.innerHTML = '<div class="spinner">Loading...</div>';
+    try {
+      const r = await fetch(API + '/api/admin/payout/history?limit=30', { headers: adminHeaders() });
+      const items = await r.json();
+      if (!items.length) { el.innerHTML = '<div class="empty">No completed payouts yet.</div>'; return; }
+      el.innerHTML = '<h3 style="margin:0 0 8px;">Completed Payouts</h3>' + items.map(item => `
+        <div class="card" style="opacity:0.85;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span class="card-title">${esc(item.agent_name)}</span>
+            <span class="badge badge-disbursed">DISBURSED</span>
+          </div>
+          <div class="info-row"><span>Amount</span><span>${formatUGX(item.agent_payout)}</span></div>
+          <div class="info-row"><span>Batch</span><span>${esc(item.batch_code)} — ${esc(item.crop)} ${item.total_quantity_kg}kg</span></div>
+          <div class="info-row"><span>MoMo Ref</span><span>${esc(item.disbursement_ref)}</span></div>
+          <div class="info-row"><span>Disbursed</span><span>${formatDate(item.disbursed_at)}</span></div>
+        </div>
+      `).join('');
+    } catch (e) { el.innerHTML = '<div class="empty">Failed to load history.</div>'; }
   }
 
   // ==========================================

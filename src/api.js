@@ -65,6 +65,57 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     // Rate limiter — use injected instance for testing, or create fresh
     const limiter = (opts && opts.limiter) || createRateLimiter();
 
+    // Webhook notifier for admin alerts (Discord, Slack, etc.)
+    // Set WEBHOOK_URL env var to receive JSON POST on key events
+    // Auto-detects Discord URLs and sends rich embeds; plain JSON for others
+    const WEBHOOK_COLORS = {
+        escrow_created:  0x1565c0, // blue
+        escrow_locked:   0xf9a825, // amber
+        escrow_dispatched: 0x6a1b9a, // purple
+        escrow_released: 0x2e7d32, // green — money time
+        escrow_disputed: 0xc62828, // red
+        escrow_cancelled: 0x757575, // grey
+        payout_disbursed: 0x00695c, // teal
+        sla_warning:     0xff6f00, // orange
+        sla_expired:     0xb71c1c  // dark red
+    };
+    const WEBHOOK_EMOJI = {
+        escrow_created: '📦', escrow_locked: '🔒', escrow_dispatched: '🚛',
+        escrow_released: '💰', escrow_disputed: '⚠️', escrow_cancelled: '❌',
+        payout_disbursed: '✅', sla_warning: '⏰', sla_expired: '🚨'
+    };
+    function fireWebhook(event, data) {
+        const url = process.env.WEBHOOK_URL;
+        if (!url) return;
+        const isDiscord = url.includes('discord.com/api/webhooks');
+        const timestamp = new Date().toISOString();
+        let payload;
+        if (isDiscord) {
+            const emoji = WEBHOOK_EMOJI[event] || '📢';
+            const fields = Object.entries(data).map(([k, v]) => ({
+                name: k.replace(/_/g, ' '),
+                value: String(v || '—'),
+                inline: true
+            }));
+            payload = JSON.stringify({
+                embeds: [{
+                    title: `${emoji} ${event.replace(/_/g, ' ').toUpperCase()}`,
+                    color: WEBHOOK_COLORS[event] || 0x424242,
+                    fields,
+                    footer: { text: 'Agri-Bridge Pilot' },
+                    timestamp
+                }]
+            });
+        } else {
+            payload = JSON.stringify({ event, data, timestamp });
+        }
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload
+        }).catch(() => {}); // fire-and-forget
+    }
+
     function extractCredentials(req) {
         return {
             phone: req.headers['x-phone'] || req.query.phone,
@@ -847,6 +898,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         if (payStatus !== 'SUCCESSFUL') return res.status(400).json({ error: 'Payment not successful' });
         const result = helpers.lockEscrow(req.params.id, reference);
         if (result.error) return res.status(400).json({ error: result.error });
+        fireWebhook('escrow_locked', { escrow_id: req.params.id, reference });
         res.json({ success: true, escrow_status: 'FUNDS_LOCKED' });
     });
 
@@ -860,6 +912,10 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         if (result.error) return res.status(400).json({ error: result.error });
         // SMS: notify buyer that produce is on its way with driver details
         sendSms(sms, result.buyer_phone, `Agri-Bridge: Your order has been dispatched! Driver: ${result.driver_phone}, Truck: ${result.truck_plate_number}. Confirm delivery when you receive it.`);
+        fireWebhook('escrow_dispatched', {
+            escrow_id: req.params.id, agent: auth.agent.phone,
+            driver: result.driver_phone, truck: result.truck_plate_number
+        });
         res.json({ success: true, escrow_status: 'IN_TRANSIT', driver_phone: result.driver_phone, truck_plate_number: result.truck_plate_number });
     });
 
@@ -885,6 +941,14 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
                 }
             }
         } catch (_) {} // fire-and-forget — never block release
+        // Webhook alert for admin — fire-and-forget
+        fireWebhook('escrow_released', {
+            escrow_id: req.params.id,
+            agent_phone: result.agent_phone,
+            agent_payout: result.agent_payout,
+            batch_id: result.batch_id,
+            released_at: result.released_at
+        });
         res.json({ success: true, escrow_status: 'RELEASED' });
     });
 
@@ -897,6 +961,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         if (result.error) return res.status(400).json({ error: result.error });
         // SMS: notify agent that order was cancelled
         sendSms(sms, result.agent_phone, `Agri-Bridge: Order cancelled by buyer. Your batch is back on the marketplace.`);
+        fireWebhook('escrow_cancelled', { escrow_id: req.params.id, cancelled_by: buyer.phone });
         res.json({ success: true, escrow_status: 'CANCELLED' });
     });
 
@@ -912,6 +977,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         // SMS: notify agent of dispute
         sendSms(sms, result.agent_phone, `Agri-Bridge: DISPUTE filed on your order. Reason: ${reason}. Your trust score is frozen until resolved. Contact admin.`);
         if (helpers._notify) helpers._notify.error('Dispute Filed', `Buyer: ${buyer.phone}\nReason: ${reason}\nEscrow: ${req.params.id}`);
+        fireWebhook('escrow_disputed', { escrow_id: req.params.id, buyer: buyer.phone, reason });
         res.json({ success: true, escrow_status: 'DISPUTED' });
     });
 
@@ -979,6 +1045,11 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         if (result.error) return res.status(400).json({ error: result.error });
         // SMS: notify agent that payout has been sent
         sendSms(sms, result.agent_phone, `Agri-Bridge: UGX ${Number(result.agent_payout).toLocaleString()} sent to your MoMo! Ref: ${result.disbursement_ref}`);
+        fireWebhook('payout_disbursed', {
+            escrow_id: req.params.id, agent: result.agent_phone,
+            amount: `UGX ${Number(result.agent_payout).toLocaleString()}`,
+            momo_ref: result.disbursement_ref
+        });
         res.json({ success: true, payout_status: 'DISBURSED', disbursement_ref: result.disbursement_ref });
     });
 
@@ -998,6 +1069,13 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         res.send(csvHeader + csvBody);
     });
 
+    // GET /api/admin/payout/history — Completed disbursements for reconciliation
+    router.get('/admin/payout/history', (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        const limit = Math.min(Number(req.query.limit) || 50, 200);
+        res.json(helpers.getPayoutHistory(limit));
+    });
+
     // GET /api/admin/stats — Platform stats overview
     router.get('/admin/stats', (req, res) => {
         if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
@@ -1011,6 +1089,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         const warnings = helpers.getDispatchWarningEscrows();
         warnings.forEach(esc => {
             sendSms(sms, esc.agent_phone, `Agri-Bridge WARNING: Your escrow order expires in 4 hours! Log driver/truck details NOW or the order will be auto-cancelled and your trust score penalized.`);
+            fireWebhook('sla_warning', { escrow_id: esc.id, agent: esc.agent_phone, hours_left: 4 });
         });
         // 24h auto-cancels
         const expired = helpers.getDispatchExpiredEscrows();
@@ -1019,6 +1098,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
             if (result) {
                 sendSms(sms, result.agent_phone, `Agri-Bridge: Order auto-cancelled — you missed the 24h dispatch window. Your trust score has been affected.`);
                 sendSms(sms, result.buyer_phone, `Agri-Bridge: Your order has been auto-cancelled and refund initiated. The agent failed to dispatch within 24 hours. The batch is back on the marketplace.`);
+                fireWebhook('sla_expired', { escrow_id: esc.id, agent: result.agent_phone, action: 'auto-cancelled' });
             }
             return result;
         }).filter(Boolean);
