@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agri-Bridge: Let's Build This Together</title>
+<style>
+:root {
+  --bg: #0a0f1c;
+  --surface: #131b2e;
+  --card: #1a2440;
+  --accent: #22c55e;
+  --accent2: #3b82f6;
+  --accent3: #f59e0b;
+  --danger: #ef4444;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --border: #1e3a5f;
+  --farmer: #22c55e;
+  --agent: #3b82f6;
+  --buyer: #a855f7;
+  --admin: #f59e0b;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 60px 80px;
+  opacity: 0;
+  transform: translateX(60px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  pointer-events: none;
+  overflow-y: auto;
+}
+
+.slide.active {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.slide.prev {
+  transform: translateX(-60px);
+}
+
+/* NAVIGATION */
+.nav {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  z-index: 100;
+  background: rgba(19,27,46,0.9);
+  padding: 10px 20px;
+  border-radius: 30px;
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+}
+
+.nav button {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.nav button:hover { background: var(--accent); color: #000; }
+
+.counter {
+  font-size: 14px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 60px;
+  text-align: center;
+}
+
+.progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  transition: width 0.4s ease;
+  z-index: 100;
+}
+
+/* TYPOGRAPHY */
+h1 {
+  font-size: clamp(32px, 5vw, 56px);
+  font-weight: 700;
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+
+h2 {
+  font-size: clamp(26px, 3.5vw, 42px);
+  font-weight: 700;
+  margin-bottom: 24px;
+  line-height: 1.2;
+}
+
+h3 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--accent);
+}
+
+p, li {
+  font-size: clamp(16px, 1.8vw, 20px);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.subtitle {
+  font-size: clamp(18px, 2.2vw, 26px);
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.highlight { color: var(--accent); }
+.highlight-blue { color: var(--accent2); }
+.highlight-amber { color: var(--accent3); }
+.highlight-red { color: var(--danger); }
+
+/* LAYOUT */
+.content { max-width: 1100px; width: 100%; }
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  width: 100%;
+  max-width: 1100px;
+}
+
+.three-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 24px;
+  width: 100%;
+  max-width: 1100px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.card-accent {
+  border-left: 4px solid var(--accent);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  width: 100%;
+  max-width: 1100px;
+}
+
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.stat-num {
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* TAGS */
+.tag {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.tag-green { background: rgba(34,197,94,0.15); color: var(--farmer); }
+.tag-blue { background: rgba(59,130,246,0.15); color: var(--accent2); }
+.tag-purple { background: rgba(168,85,247,0.15); color: var(--buyer); }
+.tag-amber { background: rgba(245,158,11,0.15); color: var(--admin); }
+.tag-red { background: rgba(239,68,68,0.15); color: var(--danger); }
+
+/* FLOW DIAGRAM */
+.flow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 20px 0;
+}
+.flow-node {
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 20px;
+  font-weight: 600;
+  font-size: 15px;
+  text-align: center;
+  min-width: 120px;
+}
+.flow-arrow {
+  color: var(--muted);
+  font-size: 24px;
+}
+
+/* TIMELINE */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 900px;
+}
+.timeline-item {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.timeline-marker {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: #000;
+}
+.timeline-content {
+  flex: 1;
+}
+.timeline-content strong {
+  display: block;
+  font-size: 17px;
+  margin-bottom: 2px;
+}
+.timeline-content span {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* CHALLENGE LIST */
+.challenge-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.challenge-list li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.challenge-list .icon {
+  min-width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+/* ESCROW FLOW */
+.escrow-flow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 16px 0;
+}
+.escrow-state {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* SVG DIAGRAMS */
+svg text { font-family: 'Segoe UI', system-ui, sans-serif; }
+
+/* PRINT */
+@media print {
+  .slide { position: relative; opacity: 1; transform: none; pointer-events: auto; page-break-after: always; min-height: 100vh; }
+  .nav, .progress { display: none; }
+  body { overflow: visible; }
+}
+
+/* RESPONSIVE */
+@media (max-width: 768px) {
+  .slide { padding: 40px 24px; }
+  .two-col, .three-col { grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<!-- SLIDE 1: TITLE -->
+<section class="slide active" data-slide="0">
+  <div class="content" style="text-align:center">
+    <p class="subtitle" style="letter-spacing:3px;text-transform:uppercase;margin-bottom:24px">Partnership Proposal</p>
+    <h1>Let's Build This <span class="highlight">Together</span></h1>
+    <p style="font-size:clamp(18px,2.2vw,24px);color:var(--muted);margin:20px 0 40px">
+      Agri-Bridge: A Micro-Aggregator OS for Uganda's Agricultural Supply Chain
+    </p>
+    <svg width="400" height="80" viewBox="0 0 400 80" style="max-width:100%">
+      <rect x="0" y="20" width="90" height="40" rx="8" fill="#22c55e" opacity="0.2" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="45" y="45" text-anchor="middle" fill="#22c55e" font-size="14" font-weight="600">Farmer</text>
+      <line x1="95" y1="40" x2="145" y2="40" stroke="#475569" stroke-width="2" stroke-dasharray="4"/>
+      <polygon points="140,35 150,40 140,45" fill="#475569"/>
+      <rect x="150" y="20" width="90" height="40" rx="8" fill="#3b82f6" opacity="0.2" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="195" y="45" text-anchor="middle" fill="#3b82f6" font-size="14" font-weight="600">Agent</text>
+      <line x1="245" y1="40" x2="295" y2="40" stroke="#475569" stroke-width="2" stroke-dasharray="4"/>
+      <polygon points="290,35 300,40 290,45" fill="#475569"/>
+      <rect x="300" y="20" width="90" height="40" rx="8" fill="#a855f7" opacity="0.2" stroke="#a855f7" stroke-width="1.5"/>
+      <text x="345" y="45" text-anchor="middle" fill="#a855f7" font-size="14" font-weight="600">Buyer</text>
+    </svg>
+    <p style="margin-top:40px;color:var(--muted);font-size:16px">Fixing how food moves from farm to market</p>
+  </div>
+</section>
+
+<!-- SLIDE 2: THE PROBLEM -->
+<section class="slide" data-slide="1">
+  <div class="content">
+    <h2>The Problem: <span class="highlight-red">Everyone Loses</span></h2>
+    <div class="stat-grid" style="margin-bottom:32px">
+      <div class="stat-card">
+        <div class="stat-num highlight-red">40%</div>
+        <div class="stat-label">Post-Harvest Loss</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num highlight-amber">20-30%</div>
+        <div class="stat-label">Farmer's Share of Retail Price</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num highlight-blue">15%</div>
+        <div class="stat-label">Farmers With Pre-Harvest Price Info</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" style="color:var(--muted)">0</div>
+        <div class="stat-label">Digital Records in the Chain</div>
+      </div>
+    </div>
+    <svg width="100%" height="120" viewBox="0 0 900 120" preserveAspectRatio="xMidYMid meet">
+      <rect x="20" y="30" width="140" height="60" rx="10" fill="#22c55e" opacity="0.15" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="90" y="55" text-anchor="middle" fill="#22c55e" font-size="15" font-weight="600">Farmer</text>
+      <text x="90" y="75" text-anchor="middle" fill="#94a3b8" font-size="11">No price info</text>
+      <line x1="165" y1="60" x2="230" y2="60" stroke="#475569" stroke-width="2" stroke-dasharray="5"/>
+      <text x="197" y="50" text-anchor="middle" fill="#ef4444" font-size="10">Cash only</text>
+      <rect x="235" y="30" width="140" height="60" rx="10" fill="#f59e0b" opacity="0.15" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="305" y="55" text-anchor="middle" fill="#f59e0b" font-size="15" font-weight="600">Middleman</text>
+      <text x="305" y="75" text-anchor="middle" fill="#94a3b8" font-size="11">No records</text>
+      <line x1="380" y1="60" x2="445" y2="60" stroke="#475569" stroke-width="2" stroke-dasharray="5"/>
+      <text x="412" y="50" text-anchor="middle" fill="#ef4444" font-size="10">No trust</text>
+      <rect x="450" y="30" width="140" height="60" rx="10" fill="#3b82f6" opacity="0.15" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="520" y="55" text-anchor="middle" fill="#3b82f6" font-size="15" font-weight="600">Transporter</text>
+      <text x="520" y="75" text-anchor="middle" fill="#94a3b8" font-size="11">No tracking</text>
+      <line x1="595" y1="60" x2="660" y2="60" stroke="#475569" stroke-width="2" stroke-dasharray="5"/>
+      <text x="627" y="50" text-anchor="middle" fill="#ef4444" font-size="10">Spoilage</text>
+      <rect x="665" y="30" width="140" height="60" rx="10" fill="#a855f7" opacity="0.15" stroke="#a855f7" stroke-width="1.5"/>
+      <text x="735" y="55" text-anchor="middle" fill="#a855f7" font-size="15" font-weight="600">Buyer</text>
+      <text x="735" y="75" text-anchor="middle" fill="#94a3b8" font-size="11">Can't verify quality</text>
+    </svg>
+  </div>
+</section>
+
+<!-- SLIDE 3: WHAT IS AGRI-BRIDGE -->
+<section class="slide" data-slide="2">
+  <div class="content">
+    <h2>What Is <span class="highlight">Agri-Bridge</span>?</h2>
+    <p style="font-size:20px;margin-bottom:32px">A platform that turns agricultural middlemen into <strong style="color:var(--accent)">Verified Aggregators</strong> &mdash; not replacing them, upgrading them.</p>
+    <div class="three-col">
+      <div class="card" style="border-top:3px solid var(--farmer)">
+        <h3 style="color:var(--farmer)">Farmers</h3>
+        <p style="font-size:16px"><strong>USSD</strong> &mdash; works on any phone, no smartphone needed. Check prices, view sales history, get SMS receipts.</p>
+      </div>
+      <div class="card" style="border-top:3px solid var(--agent)">
+        <h3 style="color:var(--agent)">Agents</h3>
+        <p style="font-size:16px"><strong>USSD + Web</strong> &mdash; record purchases, create batches, list on marketplace, build trust profile.</p>
+      </div>
+      <div class="card" style="border-top:3px solid var(--buyer)">
+        <h3 style="color:var(--buyer)">Buyers</h3>
+        <p style="font-size:16px"><strong>Web Dashboard</strong> &mdash; browse listings, escrow-protected payments, track shipments, verify origin.</p>
+      </div>
+    </div>
+    <div style="margin-top:32px;text-align:center">
+      <span class="tag tag-green">Purchase Ledger</span>
+      <span class="tag tag-blue">Escrow Payments</span>
+      <span class="tag tag-purple">Batch Aggregation</span>
+      <span class="tag tag-amber">Quality Grading</span>
+      <span class="tag tag-green">Traceability</span>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 4: HOW FARMERS USE IT -->
+<section class="slide" data-slide="3">
+  <div class="content">
+    <h2 style="color:var(--farmer)">How Does a Farmer Use It?</h2>
+    <div class="two-col">
+      <div>
+        <p style="font-size:18px;margin-bottom:24px">Farmer dials a USSD code on <strong>any phone</strong> &mdash; even a basic feature phone. No app download, no internet needed.</p>
+        <div class="card" style="font-family:monospace;font-size:15px;background:#0d1117;border-color:#30363d;line-height:2">
+          <div style="color:var(--accent)">Welcome to Agri-Bridge</div>
+          <div style="color:var(--muted)">1. Check Market Prices</div>
+          <div style="color:var(--muted)">2. My Sales History</div>
+          <div style="color:var(--muted)">3. My Pending Payments</div>
+          <div style="color:var(--muted)">4. Register</div>
+        </div>
+      </div>
+      <div>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--farmer)">1</div>
+            <div class="timeline-content">
+              <strong>Check Market Prices</strong>
+              <span>See current prices before deciding to sell</span>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--farmer)">2</div>
+            <div class="timeline-content">
+              <strong>Get SMS Purchase Confirmation</strong>
+              <span>"Okello recorded: 50kg Maize @ 1,200/kg = 60,000 UGX"</span>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--farmer)">3</div>
+            <div class="timeline-content">
+              <strong>View Sales History</strong>
+              <span>Track every sale, know what you're owed</span>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--farmer)">4</div>
+            <div class="timeline-content">
+              <strong>Fair Trade SMS</strong>
+              <span>When escrow releases, farmer sees the final sale price</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 5: HOW AGENTS USE IT -->
+<section class="slide" data-slide="4">
+  <div class="content">
+    <h2 style="color:var(--agent)">How Does an Agent Use It?</h2>
+    <div class="two-col">
+      <div>
+        <p style="font-size:18px;margin-bottom:24px">Agent registers via USSD or web. They become a <strong style="color:var(--agent)">Verified Aggregator</strong> with a digital track record.</p>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--agent)">1</div>
+            <div class="timeline-content">
+              <strong>Record Purchases</strong>
+              <span>Log each farmer purchase: crop, quantity, price, quality grade</span>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--agent)">2</div>
+            <div class="timeline-content">
+              <strong>Create Batches</strong>
+              <span>Combine multiple farmer purchases into sellable lots</span>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--agent)">3</div>
+            <div class="timeline-content">
+              <strong>List on Marketplace</strong>
+              <span>Post batches with quality grade, origin, and price</span>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--agent)">4</div>
+            <div class="timeline-content">
+              <strong>Build Trust Score</strong>
+              <span>Every completed trade builds a verifiable reputation</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center">
+        <svg width="300" height="300" viewBox="0 0 300 300">
+          <circle cx="150" cy="150" r="120" fill="none" stroke="var(--border)" stroke-width="8"/>
+          <circle cx="150" cy="150" r="120" fill="none" stroke="var(--agent)" stroke-width="8" stroke-dasharray="754" stroke-dashoffset="189" stroke-linecap="round" transform="rotate(-90 150 150)">
+            <animate attributeName="stroke-dashoffset" from="754" to="189" dur="1.5s" fill="freeze"/>
+          </circle>
+          <text x="150" y="140" text-anchor="middle" fill="var(--agent)" font-size="48" font-weight="800">75%</text>
+          <text x="150" y="170" text-anchor="middle" fill="var(--muted)" font-size="14">TRUST SCORE</text>
+          <text x="150" y="195" text-anchor="middle" fill="var(--muted)" font-size="12">Based on completed trades</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 6: HOW BUYERS USE IT -->
+<section class="slide" data-slide="5">
+  <div class="content">
+    <h2 style="color:var(--buyer)">How Does a Buyer Use It?</h2>
+    <div class="two-col">
+      <div>
+        <p style="font-size:18px;margin-bottom:24px">Buyer accesses a web dashboard. Full visibility into what's available, who's selling, and where it came from.</p>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--buyer)">1</div>
+            <div class="timeline-content">
+              <strong>Browse Marketplace</strong>
+              <span>Search by crop, region, quality grade, quantity</span>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--buyer)">2</div>
+            <div class="timeline-content">
+              <strong>Escrow-Protected Orders</strong>
+              <span>Money held safely until delivery is confirmed</span>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--buyer)">3</div>
+            <div class="timeline-content">
+              <strong>Track Shipments</strong>
+              <span>Real-time status: dispatched, in-transit, delivered</span>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker" style="background:var(--buyer)">4</div>
+            <div class="timeline-content">
+              <strong>Full Traceability</strong>
+              <span>See every farmer who contributed to the batch</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center">
+        <div class="card" style="width:100%;border-top:3px solid var(--buyer)">
+          <h3 style="color:var(--buyer);font-size:16px">Buyer Value Proposition</h3>
+          <ul style="list-style:none;font-size:15px;line-height:2.2">
+            <li>&#x2705; Guaranteed quality with grading</li>
+            <li>&#x2705; No cash risk &mdash; escrow protects both sides</li>
+            <li>&#x2705; Verified agent profiles with trust scores</li>
+            <li>&#x2705; Origin traceability for export compliance</li>
+            <li>&#x2705; Lower sourcing cost via direct aggregation</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 7: THE MONEY FLOW -->
+<section class="slide" data-slide="6">
+  <div class="content" style="text-align:center">
+    <h2>The Money Flow &mdash; <span class="highlight">A Real Example</span></h2>
+    <p style="font-size:18px;margin-bottom:24px;color:var(--muted)">200kg of Maize, 4 farmers, 1 agent, 1 buyer</p>
+    <div class="escrow-flow" style="margin-bottom:32px">
+      <div class="escrow-state" style="background:rgba(59,130,246,0.2);color:var(--accent2)">Pending</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="escrow-state" style="background:rgba(245,158,11,0.2);color:var(--accent3)">Locked</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="escrow-state" style="background:rgba(168,85,247,0.2);color:var(--buyer)">In Transit</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="escrow-state" style="background:rgba(34,197,94,0.2);color:var(--accent)">Released</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="escrow-state" style="background:rgba(34,197,94,0.3);color:var(--accent)">Disbursed</div>
+    </div>
+    <div class="stat-grid" style="max-width:800px;margin:0 auto">
+      <div class="stat-card" style="border-top:3px solid var(--buyer)">
+        <div style="font-size:14px;color:var(--muted);margin-bottom:8px">BUYER DEPOSITS</div>
+        <div class="stat-num" style="font-size:36px;color:var(--buyer)">500,000</div>
+        <div style="font-size:13px;color:var(--muted)">UGX into escrow</div>
+      </div>
+      <div class="stat-card" style="border-top:3px solid var(--accent)">
+        <div style="font-size:14px;color:var(--muted);margin-bottom:8px">PLATFORM FEE (3%)</div>
+        <div class="stat-num" style="font-size:36px;color:var(--accent3)">15,000</div>
+        <div style="font-size:13px;color:var(--muted)">UGX revenue</div>
+      </div>
+      <div class="stat-card" style="border-top:3px solid var(--agent)">
+        <div style="font-size:14px;color:var(--muted);margin-bottom:8px">AGENT RECEIVES</div>
+        <div class="stat-num" style="font-size:36px;color:var(--agent)">485,000</div>
+        <div style="font-size:13px;color:var(--muted)">UGX after fee</div>
+      </div>
+    </div>
+    <p style="margin-top:24px;font-size:16px;color:var(--farmer)">Each farmer receives Fair Trade SMS with the final sale price</p>
+  </div>
+</section>
+
+<!-- SLIDE 8: PROBLEMS WE SOLVE -->
+<section class="slide" data-slide="7">
+  <div class="content">
+    <h2>What Problems Does This <span class="highlight">Actually Solve</span>?</h2>
+    <p style="font-size:16px;margin-bottom:24px;color:var(--muted)">Based on research from 74 sources on Uganda's agribusiness challenges</p>
+    <div class="three-col">
+      <div class="card card-accent">
+        <h3>Price Opacity</h3>
+        <p style="font-size:15px">Only 15% of farmers have pre-harvest market info. USSD price checks change this.</p>
+      </div>
+      <div class="card card-accent">
+        <h3>Trust Deficit</h3>
+        <p style="font-size:15px">No receipts, no records, no accountability. Digital purchase ledger creates a paper trail.</p>
+      </div>
+      <div class="card card-accent">
+        <h3>Post-Harvest Losses</h3>
+        <p style="font-size:15px">40% of produce lost. Batch aggregation and marketplace speed up the sale cycle.</p>
+      </div>
+      <div class="card card-accent">
+        <h3>Payment Delays</h3>
+        <p style="font-size:15px">Farmers wait weeks or months. Escrow guarantees payment on delivery confirmation.</p>
+      </div>
+      <div class="card card-accent">
+        <h3>Quality Disputes</h3>
+        <p style="font-size:15px">No grading standards. Quality grades at point of purchase create shared expectations.</p>
+      </div>
+      <div class="card card-accent">
+        <h3>Traceability Gaps</h3>
+        <p style="font-size:15px">Buyers can't verify origin for export. Batch-to-farmer traceability solves this.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 9: WHAT WE'VE BUILT -->
+<section class="slide" data-slide="8">
+  <div class="content" style="text-align:center">
+    <h2>What We've <span class="highlight-blue">Already Built</span></h2>
+    <div class="stat-grid" style="margin-bottom:32px">
+      <div class="stat-card">
+        <div class="stat-num highlight-blue">67</div>
+        <div class="stat-label">API Endpoints</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num highlight">184</div>
+        <div class="stat-label">Tests Passing</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num highlight-amber">4,945</div>
+        <div class="stat-label">Lines of Code</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" style="color:var(--buyer)">4</div>
+        <div class="stat-label">User Interfaces</div>
+      </div>
+    </div>
+    <div class="two-col" style="text-align:left">
+      <div class="card">
+        <h3>Core Platform</h3>
+        <ul style="list-style:none;font-size:15px;line-height:2">
+          <li>&#x2705; Full USSD menu system (farmer + agent)</li>
+          <li>&#x2705; Digital purchase ledger</li>
+          <li>&#x2705; Escrow payment system (5-state machine)</li>
+          <li>&#x2705; Batch aggregation with quality grading</li>
+          <li>&#x2705; Buyer marketplace with search &amp; filters</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Operations</h3>
+        <ul style="list-style:none;font-size:15px;line-height:2">
+          <li>&#x2705; Admin dashboard (payouts, arbitration)</li>
+          <li>&#x2705; Agent trust scores</li>
+          <li>&#x2705; Discord webhook alerts (8 event types)</li>
+          <li>&#x2705; Fair Trade SMS to farmers</li>
+          <li>&#x2705; Rate limiting, CSRF protection, XSS sanitization</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 10: WHERE WE ARE NOW -->
+<section class="slide" data-slide="9">
+  <div class="content">
+    <h2>Where We Are <span class="highlight-amber">Right Now</span></h2>
+    <div class="two-col">
+      <div>
+        <div class="card" style="border-left:4px solid var(--accent3);margin-bottom:20px">
+          <h3 style="color:var(--accent3)">Beta 5 &mdash; Feature Freeze</h3>
+          <p style="font-size:16px">Since March 31, 2026. No new features until field validation proves the core model works.</p>
+        </div>
+        <div class="card" style="border-left:4px solid var(--accent2)">
+          <h3 style="color:var(--accent2)">Deployed on Railway (Cloud)</h3>
+          <p style="font-size:16px">Live server running. Admin dashboard, buyer portal, agent portal, and USSD endpoint all accessible.</p>
+        </div>
+      </div>
+      <div>
+        <h3 style="color:var(--text);font-size:18px;margin-bottom:16px">What the Pilot Will Test</h3>
+        <div class="card" style="margin-bottom:12px">
+          <p style="font-size:15px"><strong style="color:var(--accent)">Q1:</strong> Do real agents actually use the purchase ledger?</p>
+        </div>
+        <div class="card" style="margin-bottom:12px">
+          <p style="font-size:15px"><strong style="color:var(--accent)">Q2:</strong> Does escrow change trust behavior between agents and buyers?</p>
+        </div>
+        <div class="card" style="margin-bottom:12px">
+          <p style="font-size:15px"><strong style="color:var(--accent)">Q3:</strong> Do farmers respond to SMS confirmations?</p>
+        </div>
+        <div class="card">
+          <p style="font-size:15px"><strong style="color:var(--accent)">Q4:</strong> Does batching actually reduce post-harvest waste?</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 11: CHALLENGES -->
+<section class="slide" data-slide="10">
+  <div class="content">
+    <h2>Current <span class="highlight-red">Challenges</span> &amp; Solutions</h2>
+    <div style="display:flex;flex-direction:column;gap:14px;max-width:1000px">
+      <div class="card" style="display:flex;gap:20px;align-items:center">
+        <div style="min-width:40px;text-align:center;font-size:24px">&#x1F4F1;</div>
+        <div style="flex:1">
+          <strong>USSD Live Access</strong>
+          <p style="font-size:14px;margin-top:2px">Need a registered company (URSB) for Africa's Talking live short code</p>
+        </div>
+        <span class="tag tag-green">Register company ~200K UGX</span>
+      </div>
+      <div class="card" style="display:flex;gap:20px;align-items:center">
+        <div style="min-width:40px;text-align:center;font-size:24px">&#x1F4B0;</div>
+        <div style="flex:1">
+          <strong>Mobile Money Integration</strong>
+          <p style="font-size:14px;margin-top:2px">Escrow payments are simulated &mdash; need real MTN MoMo API</p>
+        </div>
+        <span class="tag tag-blue">Apply after company registration</span>
+      </div>
+      <div class="card" style="display:flex;gap:20px;align-items:center">
+        <div style="min-width:40px;text-align:center;font-size:24px">&#x1F50D;</div>
+        <div style="flex:1">
+          <strong>Agent Input Honesty</strong>
+          <p style="font-size:14px;margin-top:2px">Agent controls purchase recording &mdash; could under-record and cheat farmers</p>
+        </div>
+        <span class="tag tag-amber">SMS confirmation + photo evidence</span>
+      </div>
+      <div class="card" style="display:flex;gap:20px;align-items:center">
+        <div style="min-width:40px;text-align:center;font-size:24px">&#x1F4CA;</div>
+        <div style="flex:1">
+          <strong>Static Market Prices</strong>
+          <p style="font-size:14px;margin-top:2px">Admin-set prices, not real market data &mdash; misleading at scale</p>
+        </div>
+        <span class="tag tag-green">Integrate UCE/FARMIS price feeds</span>
+      </div>
+      <div class="card" style="display:flex;gap:20px;align-items:center">
+        <div style="min-width:40px;text-align:center;font-size:24px">&#x1F468;&#x200D;&#x1F4BB;</div>
+        <div style="flex:1">
+          <strong>Single Developer</strong>
+          <p style="font-size:14px;margin-top:2px">Built by one person with AI assistance &mdash; bus factor of 1</p>
+        </div>
+        <span class="tag tag-purple">Find a partner</span>
+      </div>
+      <div class="card" style="display:flex;gap:20px;align-items:center">
+        <div style="min-width:40px;text-align:center;font-size:24px">&#x1F4B5;</div>
+        <div style="flex:1">
+          <strong>Funding</strong>
+          <p style="font-size:14px;margin-top:2px">Need capital for registration, server costs, agent onboarding</p>
+        </div>
+        <span class="tag tag-amber">Partnership + grant applications</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 12: WHAT WE CAN'T DO YET -->
+<section class="slide" data-slide="11">
+  <div class="content" style="text-align:center">
+    <h2>What We <span class="highlight-red">Honestly</span> Can't Do Yet</h2>
+    <p style="font-size:18px;color:var(--muted);margin-bottom:32px">Transparency builds trust. Here's where we stand.</p>
+    <div class="stat-grid" style="max-width:900px;margin:0 auto">
+      <div class="card" style="border-top:3px solid var(--danger)">
+        <h3 style="color:var(--danger);font-size:16px">No Live USSD</h3>
+        <p style="font-size:14px">Sandbox only until company is registered with URSB</p>
+      </div>
+      <div class="card" style="border-top:3px solid var(--danger)">
+        <h3 style="color:var(--danger);font-size:16px">No Real Mobile Money</h3>
+        <p style="font-size:14px">Payments are simulated &mdash; MoMo API requires company</p>
+      </div>
+      <div class="card" style="border-top:3px solid var(--accent3)">
+        <h3 style="color:var(--accent3);font-size:16px">Zero Completed Trades</h3>
+        <p style="font-size:14px">Trust scores have no data yet &mdash; needs real transactions</p>
+      </div>
+      <div class="card" style="border-top:3px solid var(--accent3)">
+        <h3 style="color:var(--accent3);font-size:16px">Marketplace Needs Mass</h3>
+        <p style="font-size:14px">Won't be useful with just 2-3 agents &mdash; needs 20+</p>
+      </div>
+      <div class="card" style="border-top:3px solid var(--muted)">
+        <h3 style="color:var(--muted);font-size:16px">Credit Scoring: Future</h3>
+        <p style="font-size:14px">Meaningful only at 500+ agents with transaction history</p>
+      </div>
+      <div class="card" style="border-top:3px solid var(--muted)">
+        <h3 style="color:var(--muted);font-size:16px">No Field Validation</h3>
+        <p style="font-size:14px">184 tests pass but zero real users have tried it</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 13: WHY I NEED A PARTNER -->
+<section class="slide" data-slide="12">
+  <div class="content">
+    <h2>Why I Need a <span class="highlight-blue">Partner</span></h2>
+    <div class="two-col">
+      <div class="card" style="border-top:3px solid var(--accent)">
+        <h3 style="color:var(--accent);font-size:18px">What I Bring</h3>
+        <ul style="list-style:none;font-size:16px;line-height:2.2">
+          <li>&#x2705; Working technical platform (built &amp; tested)</li>
+          <li>&#x2705; Deep research (74 sources on Uganda agribusiness)</li>
+          <li>&#x2705; Understanding of the supply chain dynamics</li>
+          <li>&#x2705; AI-assisted rapid development capability</li>
+          <li>&#x2705; Technical architecture that scales</li>
+        </ul>
+      </div>
+      <div class="card" style="border-top:3px solid var(--accent2)">
+        <h3 style="color:var(--accent2);font-size:18px">What I Need</h3>
+        <ul style="list-style:none;font-size:16px;line-height:2.2">
+          <li>&#x1F91D; Someone who shares the vision</li>
+          <li>&#x1F3E2; Help with URSB registration &amp; legal</li>
+          <li>&#x1F6A3; Field operations &mdash; visiting markets, onboarding agents</li>
+          <li>&#x1F4B0; Financial contribution for early costs</li>
+          <li>&#x1F310; Business development &amp; local networks</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card" style="margin-top:24px;text-align:center;border:2px solid var(--accent2)">
+      <p style="font-size:20px;font-weight:600;color:var(--accent2)">This isn't a job offer &mdash; it's a co-founder proposal.</p>
+      <p style="font-size:16px;color:var(--muted);margin-top:8px">Equal partners building something that matters for Uganda's farmers.</p>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 14: THE OPPORTUNITY -->
+<section class="slide" data-slide="13">
+  <div class="content" style="text-align:center">
+    <h2>The <span class="highlight">Opportunity</span></h2>
+    <div class="stat-grid" style="margin-bottom:32px">
+      <div class="stat-card">
+        <div class="stat-num highlight">$8.7B</div>
+        <div class="stat-label">Uganda's Agri Sector</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num highlight-blue">72%</div>
+        <div class="stat-label">of Workforce in Agriculture</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num highlight-amber">3%</div>
+        <div class="stat-label">Transaction Commission</div>
+      </div>
+    </div>
+    <div class="two-col" style="text-align:left">
+      <div class="card">
+        <h3>Revenue Model</h3>
+        <p style="font-size:15px;line-height:1.8">3% commission on escrow transactions. Even 0.1% of Uganda's agricultural transactions represents significant volume. Scales with adoption &mdash; zero marginal cost per new agent.</p>
+      </div>
+      <div class="card">
+        <h3>Social Impact</h3>
+        <p style="font-size:15px;line-height:1.8">Farmers earn fairer prices. Post-harvest losses decrease. Supply chain becomes transparent. Agents build real careers with verifiable track records.</p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:24px;text-align:center">
+      <p style="font-size:17px;color:var(--muted)"><strong style="color:var(--accent)">First-mover advantage</strong> in Uganda's agri-tech middleman space. Same model works across East Africa &mdash; Kenya, Tanzania, Rwanda.</p>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 15: NEXT STEPS -->
+<section class="slide" data-slide="14">
+  <div class="content">
+    <h2>Next Steps &mdash; <span class="highlight">What We Do Together</span></h2>
+    <div class="timeline" style="max-width:800px;margin:0 auto">
+      <div class="timeline-item">
+        <div class="timeline-marker" style="background:var(--accent2)">1</div>
+        <div class="timeline-content">
+          <strong>Weeks 1-2: Review &amp; Align</strong>
+          <span>Walk through the platform together. Align on vision, roles, and equity.</span>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-marker" style="background:var(--accent2)">2</div>
+        <div class="timeline-content">
+          <strong>Weeks 3-4: Register Company</strong>
+          <span>URSB registration (~200K UGX). Apply for USSD live code from Africa's Talking.</span>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-marker" style="background:var(--accent)">3</div>
+        <div class="timeline-content">
+          <strong>Month 2: Run 5-Agent Pilot</strong>
+          <span>One district. 5 real agents. 1 real buyer. Test escrow and purchase ledger in the field.</span>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-marker" style="background:var(--accent)">4</div>
+        <div class="timeline-content">
+          <strong>Month 3: Analyze &amp; Iterate</strong>
+          <span>Review pilot data. Fix what's broken. Decide if the model works.</span>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-marker" style="background:var(--accent3)">5</div>
+        <div class="timeline-content">
+          <strong>Month 4: MoMo &amp; Expand</strong>
+          <span>Apply for MTN MoMo API. Expand to 20 agents. Real money in escrow.</span>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-marker" style="background:var(--accent3)">6</div>
+        <div class="timeline-content">
+          <strong>Month 6: Seek Funding</strong>
+          <span>With pilot data in hand, apply for seed funding or agricultural grants.</span>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:32px;text-align:center;border:2px solid var(--accent)">
+      <p style="font-size:18px;font-weight:600;color:var(--accent)">Decision Point</p>
+      <p style="font-size:16px;color:var(--muted);margin-top:8px">If pilot shows agents use the platform and farmers trust it &mdash; we scale.<br>If not &mdash; we pivot or stop. No sunk cost fallacy.</p>
+    </div>
+  </div>
+</section>
+
+<!-- NAVIGATION -->
+<div class="nav">
+  <button id="prevBtn" onclick="navigate(-1)">&#x2190;</button>
+  <span class="counter" id="counter">1 / 15</span>
+  <button id="nextBtn" onclick="navigate(1)">&#x2192;</button>
+</div>
+
+<script>
+(function() {
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+  let current = 0;
+
+  function show(index) {
+    slides.forEach((s, i) => {
+      s.classList.remove('active', 'prev');
+      if (i === index) s.classList.add('active');
+      else if (i < index) s.classList.add('prev');
+    });
+    document.getElementById('counter').textContent = (index + 1) + ' / ' + total;
+    document.getElementById('progress').style.width = ((index + 1) / total * 100) + '%';
+    document.getElementById('prevBtn').style.opacity = index === 0 ? '0.3' : '1';
+    document.getElementById('nextBtn').style.opacity = index === total - 1 ? '0.3' : '1';
+  }
+
+  window.navigate = function(dir) {
+    const next = current + dir;
+    if (next >= 0 && next < total) { current = next; show(current); }
+  };
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); navigate(1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); navigate(-1); }
+    else if (e.key === 'Escape') {
+      // Overview mode toggle
+      document.body.classList.toggle('overview');
+    }
+    else if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+  });
+
+  // Touch/swipe support
+  let touchStartX = 0;
+  document.addEventListener('touchstart', function(e) { touchStartX = e.touches[0].clientX; });
+  document.addEventListener('touchend', function(e) {
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) navigate(diff > 0 ? 1 : -1);
+  });
+
+  show(0);
+})();
+</script>
+</body>
+</html>
