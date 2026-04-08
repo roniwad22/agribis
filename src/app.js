@@ -1731,7 +1731,9 @@ if (require.main === module) {
         console.warn('[SECURITY] ADMIN_SECRET is not set — admin endpoints will be inaccessible. Set it in env vars.');
     }
 
-    const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'agribis.db');
+    const dataDir = '/data';
+    const defaultDb = require('fs').existsSync(dataDir) ? path.join(dataDir, 'agribis.db') : path.join(__dirname, '..', 'agribis.db');
+    const dbPath = process.env.DB_PATH || defaultDb;
     const db = createDb(dbPath);
 
     migrateJSON(db, path.join(__dirname, '..', 'ledger.json'), (db, data) => {
