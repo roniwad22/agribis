@@ -1532,9 +1532,46 @@ Ref: ${purchase.id.slice(0, 8)}`;
     });
 
     // ==========================================
+    // ADMIN LOGIN
+    // ==========================================
+    function adminSessionToken() {
+        return crypto.createHmac('sha256', adminSecret).update('admin-session').digest('hex');
+    }
+    function isAdminAuthed(req) {
+        const cookies = parseCookies(req);
+        return !!(adminSecret && cookies['admin_session'] === adminSessionToken());
+    }
+
+    app.get('/admin/login', (req, res) => {
+        res.send(`<html><body style="font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;background:#f4f7f6;">
+            <form method="POST" action="/admin/login" style="background:white;padding:40px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+                <h2 style="margin-bottom:20px;">Admin Login</h2>
+                ${req.query.error ? '<p style="color:red;">Invalid secret. Try again.</p>' : ''}
+                <input type="password" name="secret" placeholder="Admin Secret" style="padding:10px;width:250px;border:1px solid #ccc;border-radius:4px;" autofocus>
+                <button type="submit" style="display:block;margin-top:12px;padding:10px 20px;background:#27ae60;color:white;border:none;border-radius:4px;cursor:pointer;width:100%;">Login</button>
+            </form>
+        </body></html>`);
+    });
+
+    app.post('/admin/login', (req, res) => {
+        const { secret } = req.body;
+        if (!adminSecret || secret !== adminSecret) {
+            return res.redirect('/admin/login?error=1');
+        }
+        res.setHeader('Set-Cookie', `admin_session=${adminSessionToken()}; Path=/; SameSite=Strict; HttpOnly`);
+        res.redirect('/');
+    });
+
+    app.get('/admin/logout', (req, res) => {
+        res.setHeader('Set-Cookie', 'admin_session=; Path=/; Max-Age=0; SameSite=Strict; HttpOnly');
+        res.redirect('/admin/login');
+    });
+
+    // ==========================================
     // COMMAND CENTER INTERFACE & API
     // ==========================================
     app.get('/', (req, res) => {
+        if (!isAdminAuthed(req)) return res.redirect('/admin/login');
         const csrfToken = generateCsrfToken();
         res.setHeader('Set-Cookie', `csrf_token=${csrfToken}; Path=/; SameSite=Strict; HttpOnly`);
         let rows = "";
@@ -1591,7 +1628,6 @@ Ref: ${purchase.id.slice(0, 8)}`;
         <head>
             <script>
                 const CSRF_TOKEN = '${csrfToken}';
-                const ADMIN_SECRET = '${adminSecret}';
                 function filterCrops(q) {
                     const term = q.toLowerCase();
                     document.querySelectorAll('#price-inputs [data-crop]').forEach(el => {
@@ -1606,10 +1642,10 @@ Ref: ${purchase.id.slice(0, 8)}`;
                     }).then(() => window.location.reload());
                 }
                 function agentAction(phone, newStatus) {
-                    fetch('/api/admin/agents/' + encodeURIComponent(phone) + '/status', {
-                        method: 'PATCH',
-                        headers: {'Content-Type': 'application/json', 'x-admin-secret': ADMIN_SECRET},
-                        body: JSON.stringify({ status: newStatus })
+                    fetch('/admin/agents/' + encodeURIComponent(phone) + '/status', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ status: newStatus, _csrf: CSRF_TOKEN })
                     }).then(() => window.location.reload());
                 }
             </script>
@@ -1675,8 +1711,19 @@ Ref: ${purchase.id.slice(0, 8)}`;
         </body></html>`);
     });
 
+    // Admin agent status change (cookie-authed, no secret in browser)
+    app.post('/admin/agents/:phone/status', (req, res) => {
+        if (!isAdminAuthed(req)) return res.status(403).json({ error: 'Not authenticated' });
+        if (!validateCsrf(req)) return res.status(403).json({ error: 'Invalid CSRF token' });
+        const { status } = req.body;
+        if (!['active', 'suspended', 'pending'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+        setAgentStatus(req.params.phone, status);
+        res.json({ success: true });
+    });
+
     // API endpoint for dashboard buttons
     app.post('/update-status', async (req, res) => {
+        if (!isAdminAuthed(req)) return res.status(403).json({ error: 'Not authenticated' });
         if (!validateCsrf(req)) return res.status(403).json({ error: 'Invalid CSRF token' });
         const { id, status } = req.body;
         const listing = getListing(id);
@@ -1694,6 +1741,7 @@ Ref: ${purchase.id.slice(0, 8)}`;
 
     // API endpoint for updating prices dynamically
     app.post('/update-prices', (req, res) => {
+        if (!isAdminAuthed(req)) return res.status(403).send('Not authenticated');
         if (!validateCsrf(req)) return res.status(403).send('Invalid CSRF token');
         const { _csrf, ...priceData } = req.body;
         setPrices(priceData);
@@ -1702,6 +1750,7 @@ Ref: ${purchase.id.slice(0, 8)}`;
 
     // Add a new crop to the price list
     app.post('/add-crop', (req, res) => {
+        if (!isAdminAuthed(req)) return res.status(403).send('Not authenticated');
         if (!validateCsrf(req)) return res.status(403).send('Invalid CSRF token');
         const { crop, price, unit } = req.body;
         if (!crop || !price) return res.redirect('/');

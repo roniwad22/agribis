@@ -128,38 +128,44 @@ describe('POST /api/profiles', () => {
 });
 
 describe('GET /api/profiles/:phone', () => {
-    it('returns 404 for unknown phone', async () => {
+    it('returns 401 without auth', async () => {
         const { app } = makeApp();
         const res = await req(app, 'get', '/api/profiles/+256700000000');
-        assert.equal(res.status, 404);
+        assert.equal(res.status, 401);
     });
 
-    it('returns profile after creation', async () => {
+    it('returns profile after creation (authed)', async () => {
         const { app, helpers } = makeApp();
-        helpers.saveProfile('+256700000099', 'Kato', 'Kibibi', 'Mityana');
-        const res = await req(app, 'get', '/api/profiles/+256700000099');
+        helpers.saveProfile('+256700000099', 'Kato', 'Kibibi', 'Mityana', '1234');
+        const res = await req(app, 'get', '/api/profiles/+256700000099', null, { 'x-phone': '+256700000099', 'x-pin': '1234' });
         assert.equal(res.status, 200);
         assert.equal(res.body.name, 'Kato');
     });
 });
 
 describe('PATCH /api/listings/:id/status', () => {
-    it('returns 404 for unknown id', async () => {
+    it('rejects without admin secret', async () => {
         const { app } = makeApp();
         const res = await req(app, 'patch', '/api/listings/nonexistent/status', { status: '[APPROVED]' });
+        assert.equal(res.status, 403);
+    });
+
+    it('returns 404 for unknown id (admin)', async () => {
+        const { app } = makeApp();
+        const res = await req(app, 'patch', '/api/listings/nonexistent/status', { status: '[APPROVED]' }, { 'x-admin-secret': TEST_ADMIN_SECRET });
         assert.equal(res.status, 404);
     });
 
-    it('rejects invalid status', async () => {
+    it('rejects invalid status (admin)', async () => {
         const { app } = makeApp();
-        const res = await req(app, 'patch', '/api/listings/any/status', { status: 'INVALID' });
+        const res = await req(app, 'patch', '/api/listings/any/status', { status: 'INVALID' }, { 'x-admin-secret': TEST_ADMIN_SECRET });
         assert.equal(res.status, 400);
     });
 
-    it('approves a pending listing', async () => {
+    it('approves a pending listing (admin)', async () => {
         const { app, helpers } = makeApp();
         helpers.addListing({ id: 'p1', time: 'now', phone: '+1', detail: 'Maize', location: 'A', type: 'VILLAGE', status: '[PENDING]' });
-        const res = await req(app, 'patch', '/api/listings/p1/status', { status: '[APPROVED]' });
+        const res = await req(app, 'patch', '/api/listings/p1/status', { status: '[APPROVED]' }, { 'x-admin-secret': TEST_ADMIN_SECRET });
         assert.equal(res.status, 200);
         assert.equal(helpers.getListing('p1').status, '[APPROVED]');
     });
@@ -201,9 +207,16 @@ describe('POST /api/listings/farmer', () => {
 // BROKER LISTING API
 // ==========================================
 describe('POST /api/listings/broker', () => {
-    it('creates city listing as approved', async () => {
-        const { app, helpers } = makeApp();
+    it('rejects without auth', async () => {
+        const { app } = makeApp();
         const res = await req(app, 'post', '/api/listings/broker', { phone: '+256700000002', detail: 'Matooke 200bunches' });
+        assert.equal(res.status, 401);
+    });
+
+    it('creates city listing as approved (authed)', async () => {
+        const { app, helpers } = makeApp();
+        setupBuyer(helpers, '+256700000002', '5678');
+        const res = await req(app, 'post', '/api/listings/broker', { phone: '+256700000002', detail: 'Matooke 200bunches' }, { 'x-pin': '5678' });
         assert.equal(res.status, 200);
         assert.equal(res.body.status, '[APPROVED]');
         const all = helpers.getAllListings();

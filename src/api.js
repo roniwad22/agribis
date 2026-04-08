@@ -119,7 +119,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     function extractCredentials(req) {
         return {
             phone: req.headers['x-phone'] || req.query.phone,
-            pin:   req.headers['x-pin']   || req.query.pin
+            pin:   req.headers['x-pin']
         };
     }
 
@@ -269,7 +269,9 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     // LISTINGS
     // ==========================================
     router.get('/listings', (req, res) => {
-        res.json(getAllListings());
+        // Strip phone numbers from public listing data
+        const listings = getAllListings().map(({ phone, ...rest }) => rest);
+        res.json(listings);
     });
 
     // GET /api/listings/active?type=VILLAGE|CITY  (credentials via x-phone/x-pin headers or query params)
@@ -314,10 +316,15 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         res.json({ success: true, status, agents_notified: nearbyAgents.length });
     });
 
-    // POST /api/listings/broker  { phone, detail, asking_price?, price_unit?, stock? }
+    // POST /api/listings/broker  { phone, detail, asking_price?, price_unit?, stock? }  (authenticated)
     router.post('/listings/broker', listLimit, (req, res) => {
         const { phone, detail, asking_price, price_unit, stock } = req.body;
         if (!phone || !detail) return res.status(400).json({ error: 'phone and detail are required' });
+        // Verify the caller owns this phone (buyer or profile auth)
+        const pin = req.headers['x-pin'] || req.body.pin;
+        if (!pin) return res.status(401).json({ error: 'Authentication required. Provide PIN.' });
+        const authed = authenticateBuyer(phone, pin) || authenticateProfile(phone, pin);
+        if (!authed) return res.status(403).json({ error: 'Invalid credentials' });
         addListing({
             id: crypto.randomUUID(), time: new Date().toLocaleString(),
             phone, detail, location: 'City Market', type: 'CITY', status: '[APPROVED]',
@@ -328,8 +335,9 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
         res.json({ success: true, status: '[APPROVED]' });
     });
 
-    // PATCH /api/listings/:id/status  { status: '[APPROVED]' | '[REJECTED]' }
+    // PATCH /api/listings/:id/status  { status: '[APPROVED]' | '[REJECTED]' }  (admin only)
     router.patch('/listings/:id/status', async (req, res) => {
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
         const { id } = req.params;
         const { status } = req.body;
         const allowed = ['[APPROVED]', '[REJECTED]'];
@@ -368,8 +376,17 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
     // PROFILES
     // ==========================================
     router.get('/profiles/:phone', (req, res) => {
+        // Require auth — caller must prove identity
+        const { phone, pin } = extractCredentials(req);
+        if (!phone || !pin) return res.status(401).json({ error: 'Authentication required' });
+        const authed = authenticateBuyer(phone, pin) || authenticateProfile(phone, pin) || authenticateAgent(phone, pin);
+        if (!authed || (authed.error)) return res.status(403).json({ error: 'Invalid credentials' });
         const profile = getProfile(req.params.phone);
         if (!profile) return res.status(404).json({ error: 'Profile not found' });
+        // Only return own profile or if admin
+        if (phone !== req.params.phone && req.headers['x-admin-secret'] !== ADMIN_SECRET) {
+            return res.json({ name: profile.name, parish: profile.parish, district: profile.district });
+        }
         res.json(profile);
     });
 
@@ -1055,8 +1072,7 @@ function createApiRouter(db, sms, sendSms, helpers, uploadsDir, opts) {
 
     // GET /api/admin/payout/export — CSV download for MoMo Bulk Pay
     router.get('/admin/payout/export', (req, res) => {
-        const secret = req.headers['x-admin-secret'] || req.query.secret;
-        if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
+        if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(403).json({ error: 'Unauthorized' });
         const rows = helpers.getPendingPayouts();
         const csvHeader = 'phone,amount,narration,batch_code,escrow_id,released_at\n';
         const csvBody = rows.map(r => {
